@@ -218,3 +218,25 @@ class AccountsAPITests(APITestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.first_name, "Patched Name")
 
+    def test_update_profile_location_success(self):
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        data = {
+            "latitude": "23.810331",
+            "longitude": "90.412518"
+        }
+        response = self.client.patch(self.profile_url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['profile']['latitude'], "23.810331")
+        self.assertEqual(response.data['profile']['longitude'], "90.412518")
+
+        self.user.refresh_from_db()
+        self.assertEqual(str(self.user.latitude), "23.810331")
+        self.assertEqual(str(self.user.longitude), "90.412518")
+
