@@ -330,3 +330,22 @@ class AccountsAPITests(APITestCase):
         })
         self.assertEqual(login_response.status_code, status.HTTP_200_OK)
 
+    def test_update_profile_distance_radius_success(self):
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        data = {
+            "distance_radius": 25
+        }
+        response = self.client.patch(self.profile_url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['profile']['distance_radius'], 25)
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.distance_radius, 25)
+
