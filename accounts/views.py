@@ -4,6 +4,9 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
+import random
+from django.core.mail import send_mail
+from .models import User, OTP
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -18,6 +21,9 @@ from .serializers import (
     ProfileSerializer,
     ProfileResponseSerializer,
     ProfileUpdateResponseSerializer,
+    ForgotPasswordSerializer,
+    VerifyOTPSerializer,
+    ResetPasswordSerializer,
 )
 
 
@@ -252,4 +258,160 @@ class ProfileView(APIView):
                 "errors": serializer.errors
             },
             status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class ForgotPasswordView(APIView):
+    @swagger_auto_schema(
+        operation_summary="Forgot Password - Send OTP",
+        operation_description="Send a 4-digit OTP to the user's email for password recovery.",
+        request_body=ForgotPasswordSerializer,
+        responses={
+            200: openapi.Response(
+                description="Success",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad Request")
+        }
+    )
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "success": False,
+                    "errors": serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        email = serializer.validated_data['email']
+        
+        # Delete any existing OTP codes for this email
+        OTP.objects.filter(email=email).delete()
+
+        # Generate a random 4-digit OTP code
+        otp_code = f"{random.randint(1000, 9999)}"
+
+        # Save to DB
+        OTP.objects.create(email=email, code=otp_code)
+
+        # Send email (console printout)
+        send_mail(
+            subject="Password Reset OTP",
+            message=f"Your password reset verification code is: {otp_code}",
+            from_email="no-reply@example.com",
+            recipient_list=[email],
+            fail_silently=False,
+        )
+
+        # Also print to terminal explicitly so it is very obvious to the developer
+        print(f"\n========================================\n[OTP EMAIL SENT TO {email}]\nOTP CODE: {otp_code}\n========================================\n")
+
+        return Response(
+            {
+                "success": True,
+                "message": "OTP has been sent to your email address."
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class VerifyOTPView(APIView):
+    @swagger_auto_schema(
+        operation_summary="Verify OTP",
+        operation_description="Verify the 4-digit OTP sent to the user's email.",
+        request_body=VerifyOTPSerializer,
+        responses={
+            200: openapi.Response(
+                description="Success",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad Request")
+        }
+    )
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "success": False,
+                    "errors": serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        otp_record = serializer.validated_data['otp_record']
+        otp_record.is_verified = True
+        otp_record.save()
+
+        return Response(
+            {
+                "success": True,
+                "message": "OTP has been verified successfully. You can now reset your password."
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class ResetPasswordView(APIView):
+    @swagger_auto_schema(
+        operation_summary="Reset Password using OTP",
+        operation_description="Reset the password using verified email and new credentials.",
+        request_body=ResetPasswordSerializer,
+        responses={
+            200: openapi.Response(
+                description="Success",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: openapi.Response(description="Bad Request")
+        }
+    )
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "success": False,
+                    "errors": serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+        otp_record = serializer.validated_data['otp_record']
+
+        # Find user and update password
+        user = User.objects.get(email=email)
+        user.set_password(password)
+        user.save()
+
+        # Delete all OTP records for this email to prevent reuse
+        OTP.objects.filter(email=email).delete()
+
+        return Response(
+            {
+                "success": True,
+                "message": "Password has been reset successfully. You can now login with your new password."
+            },
+            status=status.HTTP_200_OK
         )

@@ -142,3 +142,58 @@ class ProfileUpdateResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     message = serializers.CharField()
     profile = ProfileSerializer()
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("User with this email does not exist.")
+        return value
+
+
+class VerifyOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=4)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        otp = attrs.get('otp')
+
+        from .models import OTP
+        otp_record = OTP.objects.filter(email=email, code=otp).last()
+
+        if not otp_record:
+            raise serializers.ValidationError({"otp": "Invalid OTP code."})
+
+        if otp_record.is_expired():
+            raise serializers.ValidationError({"otp": "OTP code has expired."})
+
+        if otp_record.is_verified:
+            raise serializers.ValidationError({"otp": "OTP has already been verified."})
+
+        attrs['otp_record'] = otp_record
+        return attrs
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        password = attrs.get('password')
+        confirm_password = attrs.get('confirm_password')
+
+        if password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+
+        from .models import OTP
+        otp_record = OTP.objects.filter(email=email, is_verified=True).last()
+        if not otp_record or otp_record.is_expired():
+            raise serializers.ValidationError({"email": "OTP has not been verified for this email, or has expired."})
+
+        attrs['otp_record'] = otp_record
+        return attrs

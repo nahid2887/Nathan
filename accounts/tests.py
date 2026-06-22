@@ -13,6 +13,9 @@ class AccountsAPITests(APITestCase):
         self.login_url = reverse('login')
         self.change_password_url = reverse('change_password')
         self.profile_url = reverse('profile')
+        self.forgot_password_url = reverse('forgot_password')
+        self.verify_otp_url = reverse('verify_otp')
+        self.reset_password_url = reverse('reset_password')
 
         self.user_data = {
             "full_name": "Test User",
@@ -257,4 +260,73 @@ class AccountsAPITests(APITestCase):
         self.assertTrue(response.data['success'])
         self.assertEqual(float(response.data['profile']['latitude']), 23.780769)
         self.assertEqual(float(response.data['profile']['longitude']), 90.407599)
+
+    def test_forgot_password_email_not_found(self):
+        response = self.client.post(self.forgot_password_url, {"email": "notfound@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+
+    def test_forgot_password_success(self):
+        from .models import OTP
+        response = self.client.post(self.forgot_password_url, {"email": "existing@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertTrue(OTP.objects.filter(email="existing@example.com").exists())
+
+    def test_verify_otp_invalid(self):
+        from .models import OTP
+        OTP.objects.create(email="existing@example.com", code="1111")
+        response = self.client.post(self.verify_otp_url, {"email": "existing@example.com", "otp": "2222"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+
+    def test_verify_otp_success(self):
+        from .models import OTP
+        otp = OTP.objects.create(email="existing@example.com", code="1111")
+        response = self.client.post(self.verify_otp_url, {"email": "existing@example.com", "otp": "1111"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        otp.refresh_from_db()
+        self.assertTrue(otp.is_verified)
+
+    def test_reset_password_unverified(self):
+        data = {
+            "email": "existing@example.com",
+            "password": "newresetpassword123!",
+            "confirm_password": "newresetpassword123!"
+        }
+        response = self.client.post(self.reset_password_url, data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+
+    def test_reset_password_success(self):
+        from .models import OTP
+        # 1. Request OTP
+        self.client.post(self.forgot_password_url, {"email": "existing@example.com"})
+        otp_record = OTP.objects.filter(email="existing@example.com").last()
+        otp_code = otp_record.code
+
+        # 2. Verify OTP
+        verify_response = self.client.post(self.verify_otp_url, {"email": "existing@example.com", "otp": otp_code})
+        self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
+
+        # 3. Reset Password
+        reset_data = {
+            "email": "existing@example.com",
+            "password": "newresetpassword123!",
+            "confirm_password": "newresetpassword123!"
+        }
+        reset_response = self.client.post(self.reset_password_url, reset_data)
+        self.assertEqual(reset_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(reset_response.data['success'])
+
+        # OTP should be deleted from DB
+        self.assertFalse(OTP.objects.filter(email="existing@example.com").exists())
+
+        # 4. Verify login works with the new password
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "newresetpassword123!"
+        })
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
 
