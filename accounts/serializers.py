@@ -1,4 +1,4 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 
 User = get_user_model()
@@ -47,16 +47,11 @@ class ChangePasswordSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        if attrs['new_password'] == attrs['old_password']:
-            raise serializers.ValidationError({"new_password": "New password cannot be the same as the old password."})
         if attrs['new_password'] != attrs['confirm_new_password']:
             raise serializers.ValidationError({"confirm_new_password": "New passwords do not match."})
+        if attrs['new_password'] == attrs['old_password']:
+            raise serializers.ValidationError({"new_password": "New password cannot be the same as the old password."})
         return attrs
-
-    def validate_new_password(self, value):
-        from django.contrib.auth.password_validation import validate_password
-        validate_password(value, user=self.context['request'].user)
-        return value
 
     def save(self):
         user = self.context['request'].user
@@ -125,3 +120,25 @@ class LoginSuccessResponseSerializer(serializers.Serializer):
 class LoginErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     errors = serializers.DictField()
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(source='first_name', required=False, allow_blank=True)
+    email = serializers.EmailField(read_only=True)
+    profile_photo = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'full_name', 'email', 'profile_photo']
+        read_only_fields = ['id', 'email']
+
+
+class ProfileResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    profile = ProfileSerializer()
+
+
+class ProfileUpdateResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    message = serializers.CharField()
+    profile = ProfileSerializer()

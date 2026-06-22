@@ -1,6 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -11,55 +14,23 @@ from .serializers import (
     LoginSerializer,
     LoginSuccessResponseSerializer,
     LoginErrorResponseSerializer,
+    ChangePasswordSerializer,
+    ProfileSerializer,
+    ProfileResponseSerializer,
+    ProfileUpdateResponseSerializer,
 )
-from rest_framework.permissions import IsAuthenticated
-
-from rest_framework_simplejwt.tokens import RefreshToken
-
-from drf_spectacular.utils import extend_schema, OpenApiExample
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
 
 
 class RegisterView(APIView):
 
-    @extend_schema(
-        summary="Register User",
-        description="Create a new account and return JWT access and refresh tokens.",
-        request=RegisterSerializer,
+    @swagger_auto_schema(
+        operation_summary="Register User",
+        operation_description="Create a new account and return JWT access and refresh tokens.",
+        request_body=RegisterSerializer,
         responses={
             201: RegisterSuccessResponseSerializer,
             400: RegisterErrorResponseSerializer,
-        },
-        examples=[
-            OpenApiExample(
-                "Registration Request",
-                value={
-                    "full_name": "Nahid Hasan",
-                    "email": "nahid@gmail.com",
-                    "password": "12345678",
-                    "confirm_password": "12345678"
-                },
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Successful Response",
-                value={
-                    "success": True,
-                    "message": "User registered successfully.",
-                    "access": "eyJhbGciOiJIUzI1NiIs...",
-                    "refresh": "eyJhbGciOiJIUzI1NiIs...",
-                    "user": {
-                        "id": 1,
-                        "full_name": "Nahid Hasan",
-                        "email": "nahid@gmail.com"
-                    }
-                },
-                response_only=True,
-                status_codes=["201"]
-            )
-        ]
+        }
     )
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -96,24 +67,14 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
 
-    @extend_schema(
-        summary="Login User",
-        description="Login with email and password and receive JWT tokens.",
-        request=LoginSerializer,
+    @swagger_auto_schema(
+        operation_summary="Login User",
+        operation_description="Login with email and password and receive JWT tokens.",
+        request_body=LoginSerializer,
         responses={
             200: LoginSuccessResponseSerializer,
             400: LoginErrorResponseSerializer,
-        },
-        examples=[
-            OpenApiExample(
-                "Login Request",
-                value={
-                    "email": "nahid@gmail.com",
-                    "password": "12345678"
-                },
-                request_only=True,
-            ),
-        ],
+        }
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -152,60 +113,32 @@ class LoginView(APIView):
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(
-        summary="Change Password",
-        description="Change password for authenticated user.",
-        request={
-            "application/json": {
-                "type": "object",
-                "properties": {
-                    "old_password": {
-                        "type": "string",
-                        "example": "12345678"
-                    },
-                    "new_password": {
-                        "type": "string",
-                        "example": "new_password_123"
-                    },
-                    "confirm_new_password": {
-                        "type": "string",
-                        "example": "new_password_123"
-                    }
-                },
-                "required": [
-                    "old_password",
-                    "new_password",
-                    "confirm_new_password"
-                ]
-            }
-        },
+    @swagger_auto_schema(
+        operation_summary="Change Password",
+        operation_description="Change password for authenticated user.",
+        request_body=ChangePasswordSerializer,
         responses={
-            200: {
-                "type": "object",
-                "properties": {
-                    "success": {"type": "boolean"},
-                    "message": {"type": "string"}
-                }
-            },
-            400: {
-                "type": "object",
-                "properties": {
-                    "success": {"type": "boolean"},
-                    "errors": {"type": "object"}
-                }
-            }
-        },
-        examples=[
-            OpenApiExample(
-                "Change Password Example",
-                value={
-                    "old_password": "12345678",
-                    "new_password": "new_password_123",
-                    "confirm_new_password": "new_password_123"
-                },
-                request_only=True,
+            200: openapi.Response(
+                description="Success",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad Request",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "errors": openapi.Schema(type=openapi.TYPE_OBJECT)
+                    }
+                )
             )
-        ]
+        }
     )
     def post(self, request):
         serializer = ChangePasswordSerializer(
@@ -223,6 +156,96 @@ class ChangePasswordView(APIView):
                 status=status.HTTP_200_OK
             )
 
+        return Response(
+            {
+                "success": False,
+                "errors": serializer.errors
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    @swagger_auto_schema(
+        operation_summary="Get User Profile",
+        operation_description="Get profile details of the authenticated user.",
+        responses={
+            200: ProfileResponseSerializer
+        }
+    )
+    def get(self, request):
+        serializer = ProfileSerializer(request.user, context={'request': request})
+        return Response(
+            {
+                "success": True,
+                "profile": serializer.data
+            },
+            status=status.HTTP_200_OK
+        )
+
+    @swagger_auto_schema(
+        operation_summary="Update User Profile",
+        operation_description="Replace profile details (including uploading a photo) of the authenticated user.",
+        request_body=ProfileSerializer,
+        responses={
+            200: ProfileUpdateResponseSerializer,
+            400: "Bad Request"
+        }
+    )
+    def put(self, request):
+        serializer = ProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=False,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "success": True,
+                    "message": "Profile updated successfully.",
+                    "profile": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
+        return Response(
+            {
+                "success": False,
+                "errors": serializer.errors
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @swagger_auto_schema(
+        operation_summary="Partially Update User Profile",
+        operation_description="Partially update profile details (including uploading a photo) of the authenticated user.",
+        request_body=ProfileSerializer,
+        responses={
+            200: ProfileUpdateResponseSerializer,
+            400: "Bad Request"
+        }
+    )
+    def patch(self, request):
+        serializer = ProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "success": True,
+                    "message": "Profile updated successfully.",
+                    "profile": serializer.data
+                },
+                status=status.HTTP_200_OK
+            )
         return Response(
             {
                 "success": False,
