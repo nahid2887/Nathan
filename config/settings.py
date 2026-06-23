@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 
      'accounts',
      'events',
+     'recommendations',
 ]
 
 MIDDLEWARE = [

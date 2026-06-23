@@ -4,7 +4,7 @@ from .models import Event
 
 User = get_user_model()
 
-class CreatorSerializer(serializers.ModelSerializer):
+class EventCreatorSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='first_name', read_only=True)
 
     class Meta:
@@ -12,7 +12,7 @@ class CreatorSerializer(serializers.ModelSerializer):
         fields = ['id', 'full_name', 'email', 'profile_photo']
 
 class EventSerializer(serializers.ModelSerializer):
-    creator = CreatorSerializer(read_only=True)
+    creator = EventCreatorSerializer(read_only=True)
     event_banner = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:

@@ -201,3 +201,83 @@ class EventAPITests(APITestCase):
         response = self.client.delete(detail_url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Event.objects.filter(id=event.id).exists())
+
+    def test_upcoming_events_unauthenticated(self):
+        upcoming_url = reverse('event-upcoming')
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_upcoming_events_no_user_coordinates(self):
+        upcoming_url = reverse('event-upcoming')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        
+        # User 1 coordinates are null initially
+        self.user1.latitude = None
+        self.user1.longitude = None
+        self.user1.save()
+
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+        self.assertIn("not set", response.data['message'])
+
+    def test_upcoming_events_distance_filtering(self):
+        upcoming_url = reverse('event-upcoming')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # Set User 1 profile: Dhaka city coordinates and a 4 km distance radius
+        self.user1.latitude = 23.780769
+        self.user1.longitude = 90.407599
+        self.user1.distance_radius = 4
+        self.user1.save()
+
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Event A: Upcoming, created by User 2, 1.1 km away (INCLUDED)
+        event_a = Event.objects.create(
+            creator=self.user2,
+            name="Event A (Nearby)",
+            date_time=timezone.now() + timedelta(days=1),
+            location="Nearby Location",
+            latitude=23.790000,
+            longitude=90.410000
+        )
+
+        # Event B: Upcoming, created by User 2, 9 km away (EXCLUDED - too far)
+        event_b = Event.objects.create(
+            creator=self.user2,
+            name="Event B (Far)",
+            date_time=timezone.now() + timedelta(days=2),
+            location="Far Location",
+            latitude=23.850000,
+            longitude=90.450000
+        )
+
+        # Event C: Past, created by User 2, 1.1 km away (EXCLUDED - not upcoming)
+        event_c = Event.objects.create(
+            creator=self.user2,
+            name="Event C (Past)",
+            date_time=timezone.now() - timedelta(days=1),
+            location="Nearby Location Past",
+            latitude=23.790000,
+            longitude=90.410000
+        )
+
+        # Event D: Upcoming, created by User 1, 1.1 km away (EXCLUDED - own event)
+        event_d = Event.objects.create(
+            creator=self.user1,
+            name="Event D (Own)",
+            date_time=timezone.now() + timedelta(days=1),
+            location="Own Location",
+            latitude=23.790000,
+            longitude=90.410000
+        )
+
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify only Event A is returned
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['name'], "Event A (Nearby)")
+
