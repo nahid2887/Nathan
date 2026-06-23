@@ -18,13 +18,16 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
         return obj.creator == request.user
 
 @method_decorator(name='create', decorator=swagger_auto_schema(
-    consumes=['application/json', 'multipart/form-data']
+    request_body=RecommendationWriteSerializer,
+    consumes=['application/json']
 ))
 @method_decorator(name='update', decorator=swagger_auto_schema(
-    consumes=['application/json', 'multipart/form-data']
+    request_body=RecommendationWriteSerializer,
+    consumes=['application/json']
 ))
 @method_decorator(name='partial_update', decorator=swagger_auto_schema(
-    consumes=['application/json', 'multipart/form-data']
+    request_body=RecommendationWriteSerializer,
+    consumes=['application/json']
 ))
 class RecommendationViewSet(viewsets.ModelViewSet):
     """
