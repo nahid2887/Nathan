@@ -114,6 +114,11 @@ class RecommendationAPITests(APITestCase):
         self.assertEqual(rec.photos.count(), 2)
 
     def test_list_and_retrieve_recommendations(self):
+        # Set User 1 coordinates
+        self.user1.latitude = 23.780769
+        self.user1.longitude = 90.407599
+        self.user1.save()
+
         # Create recs under different users
         rec1 = Recommendation.objects.create(
             creator=self.user1,
@@ -123,7 +128,9 @@ class RecommendationAPITests(APITestCase):
         rec2 = Recommendation.objects.create(
             creator=self.user2,
             category="Cat 2",
-            details="Details 2"
+            details="Details 2",
+            latitude=23.790000,
+            longitude=90.410000
         )
 
         # Retrieve list as User 1
@@ -138,6 +145,10 @@ class RecommendationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['details'], "Details 2")
         self.assertEqual(response.data['creator']['email'], self.user2.email)
+        self.assertEqual(response.data['type'], "recommendation")
+        self.assertIsNotNone(response.data['distance_km'])
+        self.assertLess(response.data['distance_km'], 2.0)
+
 
     def test_update_recommendation_permissions_and_photo_replacement(self):
         # Create a recommendation with initial photo

@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Event
+from recommendations.models import Recommendation
 
 User = get_user_model()
 
@@ -120,6 +121,11 @@ class EventAPITests(APITestCase):
         self.assertTrue(event.event_banner.name.startswith('event_banners/test_banner'))
 
     def test_list_and_retrieve_events(self):
+        # Set User 1 coordinates
+        self.user1.latitude = 23.780769
+        self.user1.longitude = 90.407599
+        self.user1.save()
+
         # Create events under different users
         event1 = Event.objects.create(
             creator=self.user1,
@@ -131,7 +137,9 @@ class EventAPITests(APITestCase):
             creator=self.user2,
             name="User 2 Event",
             date_time="2026-08-02T10:00:00Z",
-            location="Loc 2"
+            location="Loc 2",
+            latitude=23.790000,
+            longitude=90.410000
         )
 
         # Retrieve list as User 1
@@ -147,6 +155,10 @@ class EventAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['name'], "User 2 Event")
         self.assertEqual(response.data['creator']['email'], self.user2.email)
+        self.assertEqual(response.data['type'], "event")
+        self.assertIsNotNone(response.data['distance_km'])
+        self.assertLess(response.data['distance_km'], 2.0)
+
 
     def test_update_event_permissions(self):
         event = Event.objects.create(
@@ -274,10 +286,51 @@ class EventAPITests(APITestCase):
             longitude=90.410000
         )
 
+        # Recommendation A: Created by User 2, 0.48 km away (INCLUDED - closest)
+        rec_a = Recommendation.objects.create(
+            creator=self.user2,
+            category="Services",
+            details="Best plumber near us!",
+            latitude=23.785000,
+            longitude=90.408000
+        )
+
+        # Recommendation B: Created by User 2, 9 km away (EXCLUDED - too far)
+        rec_b = Recommendation.objects.create(
+            creator=self.user2,
+            category="Food",
+            details="Great restaurant far away",
+            latitude=23.850000,
+            longitude=90.450000
+        )
+
+        # Recommendation C: Created by User 1, 0.48 km away (EXCLUDED - own recommendation)
+        rec_c = Recommendation.objects.create(
+            creator=self.user1,
+            category="Services",
+            details="My own service",
+            latitude=23.785000,
+            longitude=90.408000
+        )
+
         response = self.client.get(upcoming_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Verify only Event A is returned
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['name'], "Event A (Nearby)")
+        # Verify exactly 2 items are returned (Recommendation A and Event A)
+        self.assertEqual(len(response.data), 2)
+        
+        # Verify closest item is first: Recommendation A (approx 0.48 km)
+        self.assertEqual(response.data[0]['type'], "recommendation")
+        self.assertEqual(response.data[0]['details'], "Best plumber near us!")
+        self.assertIn('distance_km', response.data[0])
+        self.assertLess(response.data[0]['distance_km'], 1.0)
+        
+        # Verify second item is Event A (approx 1.1 km)
+        self.assertEqual(response.data[1]['type'], "event")
+        self.assertEqual(response.data[1]['name'], "Event A (Nearby)")
+        self.assertIn('distance_km', response.data[1])
+        self.assertGreater(response.data[1]['distance_km'], 1.0)
+
+        # Verify sorted ascending by distance_km
+        self.assertLessEqual(response.data[0]['distance_km'], response.data[1]['distance_km'])
 

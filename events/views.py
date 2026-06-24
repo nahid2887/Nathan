@@ -7,7 +7,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from .models import Event
-from .serializers import EventSerializer, EventWriteSerializer
+from .serializers import EventSerializer, EventWriteSerializer, UpcomingItemSerializer
+from recommendations.models import Recommendation
+from recommendations.serializers import RecommendationSerializer
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """
@@ -68,10 +70,10 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer.save(creator=self.request.user)
 
     @swagger_auto_schema(
-        operation_summary="Get Upcoming Events within Distance Radius",
-        operation_description="Retrieve upcoming events from other users that are within the user's distance_radius (in km).",
+        operation_summary="Get Upcoming Events and Recommendations within Distance Radius",
+        operation_description="Retrieve upcoming events and recommendations from other users that are within the user's distance_radius (in km).",
         responses={
-            200: EventSerializer(many=True),
+            200: UpcomingItemSerializer(many=True),
             400: "Location coordinates not set"
         }
     )
@@ -93,12 +95,32 @@ class EventViewSet(viewsets.ModelViewSet):
         # Fetch upcoming events created by other users
         events = Event.objects.filter(date_time__gte=now).exclude(creator=user)
 
-        filtered_events = []
+        # Fetch recommendations created by other users
+        recommendations = Recommendation.objects.exclude(creator=user)
+
+        combined_items = []
+
+        # Process events
         for event in events:
             if event.latitude is not None and event.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, event.latitude, event.longitude)
                 if dist <= radius:
-                    filtered_events.append(event)
+                    event_data = EventSerializer(event, context={'request': request}).data
+                    event_data['type'] = 'event'
+                    event_data['distance_km'] = round(dist, 2)
+                    combined_items.append(event_data)
 
-        serializer = EventSerializer(filtered_events, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Process recommendations
+        for rec in recommendations:
+            if rec.latitude is not None and rec.longitude is not None:
+                dist = haversine_distance(user.latitude, user.longitude, rec.latitude, rec.longitude)
+                if dist <= radius:
+                    rec_data = RecommendationSerializer(rec, context={'request': request}).data
+                    rec_data['type'] = 'recommendation'
+                    rec_data['distance_km'] = round(dist, 2)
+                    combined_items.append(rec_data)
+
+        # Sort combined list by distance_km (ascending)
+        combined_items.sort(key=lambda x: x['distance_km'])
+
+        return Response(combined_items, status=status.HTTP_200_OK)

@@ -19,15 +19,31 @@ class RecommendationPhotoSerializer(serializers.ModelSerializer):
 class RecommendationSerializer(serializers.ModelSerializer):
     creator = RecommendationCreatorSerializer(read_only=True)
     photos = RecommendationPhotoSerializer(many=True, read_only=True)
+    type = serializers.SerializerMethodField()
+    distance_km = serializers.SerializerMethodField()
 
     class Meta:
         model = Recommendation
         fields = [
             'id', 'creator', 'category', 'rating', 
             'business_name', 'details', 'latitude', 'longitude', 
-            'photos', 'created_at', 'updated_at'
+            'photos', 'created_at', 'updated_at', 'type', 'distance_km'
         ]
-        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at', 'type', 'distance_km']
+
+    def get_type(self, obj):
+        return 'recommendation'
+
+    def get_distance_km(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            user = request.user
+            if user.latitude is not None and user.longitude is not None:
+                if obj.latitude is not None and obj.longitude is not None:
+                    from events.views import haversine_distance
+                    dist = haversine_distance(user.latitude, user.longitude, obj.latitude, obj.longitude)
+                    return round(dist, 2)
+        return None
 
 class RecommendationWriteSerializer(serializers.ModelSerializer):
     photos = serializers.ListField(
