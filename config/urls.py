@@ -25,6 +25,8 @@ urlpatterns = [
     path('api/', include('accounts.urls')),
     path('api/', include('events.urls')),
     path('api/', include('recommendations.urls')),
+    path('api/', include('looking_for.urls')),
+
 
     path(
         'swagger/',

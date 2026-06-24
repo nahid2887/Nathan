@@ -47,6 +47,7 @@ INSTALLED_APPS = [
      'accounts',
      'events',
      'recommendations',
+     'looking_for',
 ]
 
 MIDDLEWARE = [

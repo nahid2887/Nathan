@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Event
 from recommendations.models import Recommendation
+from looking_for.models import LookingFor
 
 User = get_user_model()
 
@@ -313,24 +314,59 @@ class EventAPITests(APITestCase):
             longitude=90.408000
         )
 
+        # LookingFor A: Created by User 2, 0.14 km away (INCLUDED - closest)
+        lf_a = LookingFor.objects.create(
+            creator=self.user2,
+            category="Retail",
+            details="Looking for bookstore",
+            latitude=23.782000,
+            longitude=90.407700
+        )
+
+        # LookingFor B: Created by User 2, 9 km away (EXCLUDED - too far)
+        lf_b = LookingFor.objects.create(
+            creator=self.user2,
+            category="Food",
+            details="Looking for coffee",
+            latitude=23.850000,
+            longitude=90.450000
+        )
+
+        # LookingFor C: Created by User 1, 0.14 km away (EXCLUDED - own request)
+        lf_c = LookingFor.objects.create(
+            creator=self.user1,
+            category="Retail",
+            details="My own bookstore request",
+            latitude=23.782000,
+            longitude=90.407700
+        )
+
         response = self.client.get(upcoming_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Verify exactly 2 items are returned (Recommendation A and Event A)
-        self.assertEqual(len(response.data), 2)
+        # Verify exactly 3 items are returned (LookingFor A, Recommendation A, and Event A)
+        self.assertEqual(len(response.data), 3)
         
-        # Verify closest item is first: Recommendation A (approx 0.48 km)
-        self.assertEqual(response.data[0]['type'], "recommendation")
-        self.assertEqual(response.data[0]['details'], "Best plumber near us!")
+        # Verify closest item is first: LookingFor A (approx 0.14 km)
+        self.assertEqual(response.data[0]['type'], "looking_for")
+        self.assertEqual(response.data[0]['details'], "Looking for bookstore")
         self.assertIn('distance_km', response.data[0])
-        self.assertLess(response.data[0]['distance_km'], 1.0)
+        self.assertLess(response.data[0]['distance_km'], 0.3)
         
-        # Verify second item is Event A (approx 1.1 km)
-        self.assertEqual(response.data[1]['type'], "event")
-        self.assertEqual(response.data[1]['name'], "Event A (Nearby)")
+        # Verify second closest is Recommendation A (approx 0.48 km)
+        self.assertEqual(response.data[1]['type'], "recommendation")
+        self.assertEqual(response.data[1]['details'], "Best plumber near us!")
         self.assertIn('distance_km', response.data[1])
-        self.assertGreater(response.data[1]['distance_km'], 1.0)
+        self.assertLess(response.data[1]['distance_km'], 1.0)
+        
+        # Verify third item is Event A (approx 1.1 km)
+        self.assertEqual(response.data[2]['type'], "event")
+        self.assertEqual(response.data[2]['name'], "Event A (Nearby)")
+        self.assertIn('distance_km', response.data[2])
+        self.assertGreater(response.data[2]['distance_km'], 1.0)
 
         # Verify sorted ascending by distance_km
         self.assertLessEqual(response.data[0]['distance_km'], response.data[1]['distance_km'])
+        self.assertLessEqual(response.data[1]['distance_km'], response.data[2]['distance_km'])
+
 

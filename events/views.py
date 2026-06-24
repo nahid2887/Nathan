@@ -10,6 +10,9 @@ from .models import Event
 from .serializers import EventSerializer, EventWriteSerializer, UpcomingItemSerializer
 from recommendations.models import Recommendation
 from recommendations.serializers import RecommendationSerializer
+from looking_for.models import LookingFor
+from looking_for.serializers import LookingForSerializer
+
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """
@@ -98,6 +101,9 @@ class EventViewSet(viewsets.ModelViewSet):
         # Fetch recommendations created by other users
         recommendations = Recommendation.objects.exclude(creator=user)
 
+        # Fetch looking_for requests created by other users
+        looking_fors = LookingFor.objects.exclude(creator=user)
+
         combined_items = []
 
         # Process events
@@ -119,6 +125,16 @@ class EventViewSet(viewsets.ModelViewSet):
                     rec_data['type'] = 'recommendation'
                     rec_data['distance_km'] = round(dist, 2)
                     combined_items.append(rec_data)
+
+        # Process looking_for requests
+        for lf in looking_fors:
+            if lf.latitude is not None and lf.longitude is not None:
+                dist = haversine_distance(user.latitude, user.longitude, lf.latitude, lf.longitude)
+                if dist <= radius:
+                    lf_data = LookingForSerializer(lf, context={'request': request}).data
+                    lf_data['type'] = 'looking_for'
+                    lf_data['distance_km'] = round(dist, 2)
+                    combined_items.append(lf_data)
 
         # Sort combined list by distance_km (ascending)
         combined_items.sort(key=lambda x: x['distance_km'])
