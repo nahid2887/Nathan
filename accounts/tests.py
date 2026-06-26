@@ -349,3 +349,89 @@ class AccountsAPITests(APITestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.distance_radius, 25)
 
+    def test_nearby_users_unauthenticated(self):
+        url = reverse('nearby_users')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_nearby_users_missing_coordinates(self):
+        # Log in first
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        # Request user coordinates are None
+        self.user.latitude = None
+        self.user.longitude = None
+        self.user.save()
+
+        url = reverse('nearby_users')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+        self.assertIn('latitude and longitude', response.data['message'])
+
+    def test_nearby_users_success_and_filtering(self):
+        # Log in
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        # Set user location (Dhaka, Bangladesh, roughly 23.780769, 90.4125)
+        self.user.latitude = 23.780769
+        self.user.longitude = 90.4125
+        self.user.distance_radius = 25
+        self.user.save()
+
+        # Create user 1 within radius (~1.0 km away)
+        user_near = User.objects.create_user(
+            username="near@example.com",
+            email="near@example.com",
+            password="password123!",
+            first_name="Near User",
+            latitude=23.7898,
+            longitude=90.4125
+        )
+
+        # Create user 2 far away (~111 km away)
+        user_far = User.objects.create_user(
+            username="far@example.com",
+            email="far@example.com",
+            password="password123!",
+            first_name="Far User",
+            latitude=24.7807,
+            longitude=90.4125
+        )
+
+        url = reverse('nearby_users')
+        
+        # 1. Test standard retrieval with profile settings (distance=25)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['id'], user_near.id)
+        self.assertEqual(response.data['results'][0]['full_name'], "Near User")
+        self.assertIsNotNone(response.data['results'][0]['distance_km'])
+
+        # 2. Test override query parameters (e.g. distance=150 to catch the far user too)
+        response_override = self.client.get(f"{url}?distance=150")
+        self.assertEqual(response_override.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_override.data['results']), 2)
+        # Verify they are sorted by distance ascending (closest first)
+        self.assertEqual(response_override.data['results'][0]['id'], user_near.id)
+        self.assertEqual(response_override.data['results'][1]['id'], user_far.id)
+
+        # 3. Test override coordinates parameter
+        # If we search from coordinates near the far user, we should see the far user first
+        response_coord = self.client.get(f"{url}?latitude=24.7807&longitude=90.4125&distance=25")
+        self.assertEqual(response_coord.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_coord.data['results']), 1)
+        self.assertEqual(response_coord.data['results'][0]['id'], user_far.id)
+

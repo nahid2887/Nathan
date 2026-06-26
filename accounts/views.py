@@ -24,6 +24,7 @@ from .serializers import (
     ForgotPasswordSerializer,
     VerifyOTPSerializer,
     ResetPasswordSerializer,
+    NearbyUserSerializer,
 )
 
 
@@ -412,6 +413,140 @@ class ResetPasswordView(APIView):
             {
                 "success": True,
                 "message": "Password has been reset successfully. You can now login with your new password."
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class NearbyUsersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Get Nearby Users",
+        operation_description="Retrieve other users within a specified distance radius (in kilometers) from the user's location or custom location query parameters.",
+        manual_parameters=[
+            openapi.Parameter('latitude', openapi.IN_QUERY, description="Custom latitude to search from", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('longitude', openapi.IN_QUERY, description="Custom longitude to search from", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('distance', openapi.IN_QUERY, description="Radius distance in kilometers (defaults to user's distance_radius setting, or 25 if not set)", type=openapi.TYPE_NUMBER),
+        ],
+        responses={
+            200: openapi.Response(
+                description="List of nearby users sorted by distance ascending",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "base_location": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                "longitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                            }
+                        ),
+                        "radius_km": openapi.Schema(type=openapi.TYPE_NUMBER),
+                        "results": openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    "id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    "full_name": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "email": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "profile_photo": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_URI),
+                                    "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    "longitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    "distance_km": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                }
+                            )
+                        )
+                    }
+                )
+            ),
+            400: openapi.Response(
+                description="Bad Request - location coordinates not set or invalid parameters",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request):
+        user = request.user
+        
+        # Get query parameters
+        lat_param = request.query_params.get('latitude')
+        lon_param = request.query_params.get('longitude')
+        dist_param = request.query_params.get('distance')
+
+        # Determine base location
+        if lat_param is not None and lon_param is not None:
+            try:
+                base_lat = float(lat_param)
+                base_lon = float(lon_param)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Invalid coordinates provided in query parameters."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            if user.latitude is None or user.longitude is None:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "User location coordinates (latitude and longitude) are not set in their profile. Please provide latitude and longitude query parameters or update your profile."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            base_lat = float(user.latitude)
+            base_lon = float(user.longitude)
+
+        # Determine search radius
+        if dist_param is not None:
+            try:
+                radius = float(dist_param)
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Invalid distance provided in query parameters."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            radius = float(user.distance_radius) if user.distance_radius is not None else 25.0
+
+        # Fetch other users who have coordinates set
+        other_users = User.objects.exclude(id=user.id).filter(latitude__isnull=False, longitude__isnull=False)
+
+        from events.views import haversine_distance
+
+        nearby_users = []
+        for other_user in other_users:
+            dist = haversine_distance(base_lat, base_lon, other_user.latitude, other_user.longitude)
+            if dist <= radius:
+                other_user.distance_km = round(dist, 2)
+                nearby_users.append(other_user)
+
+        # Sort by distance
+        nearby_users.sort(key=lambda u: u.distance_km)
+
+        serializer = NearbyUserSerializer(nearby_users, many=True, context={'request': request})
+        return Response(
+            {
+                "success": True,
+                "base_location": {
+                    "latitude": base_lat,
+                    "longitude": base_lon
+                },
+                "radius_km": radius,
+                "results": serializer.data
             },
             status=status.HTTP_200_OK
         )

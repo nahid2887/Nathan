@@ -7,6 +7,7 @@ from .views import (
     ForgotPasswordView,
     VerifyOTPView,
     ResetPasswordView,
+    NearbyUsersView,
 )
 
 from rest_framework_simplejwt.views import (
@@ -60,5 +61,11 @@ urlpatterns = [
         'reset-password/',
         ResetPasswordView.as_view(),
         name='reset_password'
+    ),
+
+    path(
+        'users/nearby/',
+        NearbyUsersView.as_view(),
+        name='nearby_users'
     ),
 ]

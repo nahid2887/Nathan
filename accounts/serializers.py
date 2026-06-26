@@ -197,3 +197,16 @@ class ResetPasswordSerializer(serializers.Serializer):
 
         attrs['otp_record'] = otp_record
         return attrs
+
+
+class NearbyUserSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(source='first_name', read_only=True)
+    distance_km = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'full_name', 'email', 'profile_photo', 'latitude', 'longitude', 'distance_km']
+        read_only_fields = fields
+
+    def get_distance_km(self, obj):
+        return getattr(obj, 'distance_km', None)
