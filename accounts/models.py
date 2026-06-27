@@ -9,6 +9,7 @@ class User(AbstractUser):
     latitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
     longitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
     distance_radius = models.IntegerField(default=25, null=True, blank=True)
+    about_me = models.TextField(null=True, blank=True)
 
 
 class OTP(models.Model):
