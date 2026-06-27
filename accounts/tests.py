@@ -500,6 +500,7 @@ class AccountsAPITests(APITestCase):
         requests_url = reverse('friend_requests_incoming')
         response_req = self.client.get(requests_url)
         self.assertEqual(response_req.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_req.data['count'], 1)
         self.assertEqual(len(response_req.data['requests']), 1)
         req_id = response_req.data['requests'][0]['id']
         self.assertEqual(response_req.data['requests'][0]['sender']['id'], self.user.id)
@@ -512,6 +513,7 @@ class AccountsAPITests(APITestCase):
 
         # Verify incoming requests is now empty
         response_req = self.client.get(requests_url)
+        self.assertEqual(response_req.data['count'], 0)
         self.assertEqual(len(response_req.data['requests']), 0)
 
         # Send it again from request user's side
@@ -534,6 +536,7 @@ class AccountsAPITests(APITestCase):
         friends_url = reverse('friends_list')
         response_friends = self.client.get(friends_url)
         self.assertEqual(response_friends.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_friends.data['count'], 1)
         self.assertEqual(len(response_friends.data['friends']), 1)
         self.assertEqual(response_friends.data['friends'][0]['id'], self.user.id)
 
@@ -542,6 +545,7 @@ class AccountsAPITests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
         response_friends_u = self.client.get(friends_url)
         self.assertEqual(response_friends_u.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_friends_u.data['count'], 1)
         self.assertEqual(len(response_friends_u.data['friends']), 1)
         self.assertEqual(response_friends_u.data['friends'][0]['id'], user_friend.id)
 
@@ -553,6 +557,7 @@ class AccountsAPITests(APITestCase):
 
         # Verify friends list is now empty
         response_friends_u = self.client.get(friends_url)
+        self.assertEqual(response_friends_u.data['count'], 0)
         self.assertEqual(len(response_friends_u.data['friends']), 0)
 
 

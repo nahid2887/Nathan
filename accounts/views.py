@@ -653,7 +653,8 @@ class IncomingFriendRequestsView(APIView):
                                     "created_at": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
                                 }
                             )
-                        )
+                        ),
+                        "count": openapi.Schema(type=openapi.TYPE_INTEGER),
                     }
                 )
             )
@@ -662,7 +663,11 @@ class IncomingFriendRequestsView(APIView):
     def get(self, request):
         requests = Friendship.objects.filter(receiver=request.user, status='pending').order_by('-created_at')
         serializer = FriendRequestSerializer(requests, many=True, context={'request': request})
-        return Response({"success": True, "requests": serializer.data}, status=status.HTTP_200_OK)
+        return Response({
+            "success": True,
+            "count": requests.count(),
+            "requests": serializer.data
+        }, status=status.HTTP_200_OK)
 
 
 class AcceptFriendRequestView(APIView):
@@ -738,7 +743,8 @@ class FriendsListView(APIView):
                                     "longitude": openapi.Schema(type=openapi.TYPE_NUMBER),
                                 }
                             )
-                        )
+                        ),
+                        "count": openapi.Schema(type=openapi.TYPE_INTEGER),
                     }
                 )
             )
@@ -758,7 +764,11 @@ class FriendsListView(APIView):
                 friends.append(f.sender)
 
         serializer = FriendUserSerializer(friends, many=True, context={'request': request})
-        return Response({"success": True, "friends": serializer.data}, status=status.HTTP_200_OK)
+        return Response({
+            "success": True,
+            "count": len(friends),
+            "friends": serializer.data
+        }, status=status.HTTP_200_OK)
 
 
 class RemoveFriendView(APIView):
