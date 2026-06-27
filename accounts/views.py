@@ -423,11 +423,12 @@ class NearbyUsersView(APIView):
 
     @swagger_auto_schema(
         operation_summary="Get Nearby Users",
-        operation_description="Retrieve other users within a specified distance radius (in kilometers) from the user's location or custom location query parameters.",
+        operation_description="Retrieve other users within a specified distance radius (in kilometers) from the user's location or custom location query parameters. Optionally filter by name.",
         manual_parameters=[
             openapi.Parameter('latitude', openapi.IN_QUERY, description="Custom latitude to search from", type=openapi.TYPE_NUMBER),
             openapi.Parameter('longitude', openapi.IN_QUERY, description="Custom longitude to search from", type=openapi.TYPE_NUMBER),
             openapi.Parameter('distance', openapi.IN_QUERY, description="Radius distance in kilometers (defaults to user's distance_radius setting, or 25 if not set)", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('search', openapi.IN_QUERY, description="Filter users by full name (case-insensitive)", type=openapi.TYPE_STRING),
         ],
         responses={
             200: openapi.Response(
@@ -481,6 +482,7 @@ class NearbyUsersView(APIView):
         lat_param = request.query_params.get('latitude')
         lon_param = request.query_params.get('longitude')
         dist_param = request.query_params.get('distance')
+        search_param = request.query_params.get('search')
 
         # Determine base location
         if lat_param is not None and lon_param is not None:
@@ -525,6 +527,10 @@ class NearbyUsersView(APIView):
         # Fetch other users who have coordinates set
         other_users = User.objects.exclude(id=user.id).filter(latitude__isnull=False, longitude__isnull=False)
 
+        # Filter by full name if search parameter is provided
+        if search_param:
+            other_users = other_users.filter(first_name__icontains=search_param)
+
         from events.views import haversine_distance
 
         nearby_users = []
@@ -549,4 +555,4 @@ class NearbyUsersView(APIView):
                 "results": serializer.data
             },
             status=status.HTTP_200_OK
-        )
+        )

@@ -435,3 +435,21 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(len(response_coord.data['results']), 1)
         self.assertEqual(response_coord.data['results'][0]['id'], user_far.id)
 
+        # 4. Test search parameter filtering
+        # Search for "Near"
+        response_search_near = self.client.get(f"{url}?distance=150&search=near")
+        self.assertEqual(response_search_near.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_search_near.data['results']), 1)
+        self.assertEqual(response_search_near.data['results'][0]['id'], user_near.id)
+
+        # Search for "Far" (case insensitive)
+        response_search_far = self.client.get(f"{url}?distance=150&search=fAr")
+        self.assertEqual(response_search_far.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_search_far.data['results']), 1)
+        self.assertEqual(response_search_far.data['results'][0]['id'], user_far.id)
+
+        # Search for non-existent name
+        response_search_none = self.client.get(f"{url}?distance=150&search=nobody")
+        self.assertEqual(response_search_none.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_search_none.data['results']), 0)
+
