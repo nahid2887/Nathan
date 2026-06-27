@@ -210,3 +210,22 @@ class NearbyUserSerializer(serializers.ModelSerializer):
 
     def get_distance_km(self, obj):
         return getattr(obj, 'distance_km', None)
+
+
+class FriendUserSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(source='first_name', read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'full_name', 'email', 'profile_photo', 'latitude', 'longitude']
+        read_only_fields = fields
+
+
+class FriendRequestSerializer(serializers.ModelSerializer):
+    sender = FriendUserSerializer(read_only=True)
+
+    class Meta:
+        from .models import Friendship
+        model = Friendship
+        fields = ['id', 'sender', 'created_at']
+        read_only_fields = fields

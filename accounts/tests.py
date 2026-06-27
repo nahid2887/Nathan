@@ -453,3 +453,106 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(response_search_none.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response_search_none.data['results']), 0)
 
+    def test_friends_flow(self):
+        # Create another user to interact with
+        user_friend = User.objects.create_user(
+            username="friend@example.com",
+            email="friend@example.com",
+            password="password123!",
+            first_name="Friend User"
+        )
+
+        # Log in the request user
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        # 1. Send friend request
+        send_url = reverse('friend_request_send')
+        response = self.client.post(send_url, {"receiver_id": user_friend.id})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['status'], 'pending')
+
+        # Try to send it again (should fail)
+        response_dup = self.client.post(send_url, {"receiver_id": user_friend.id})
+        self.assertEqual(response_dup.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response_dup.data['success'])
+        self.assertEqual(response_dup.data['message'], "Friend request already sent.")
+
+        # Try to send request to self (should fail)
+        response_self = self.client.post(send_url, {"receiver_id": self.user.id})
+        self.assertEqual(response_self.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response_self.data['success'])
+
+        # 2. Check pending incoming requests from friend's side
+        self.client.credentials()  # log out request user
+        friend_login = self.client.post(self.login_url, {
+            "email": "friend@example.com",
+            "password": "password123!"
+        })
+        friend_token = friend_login.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {friend_token}')
+
+        requests_url = reverse('friend_requests_incoming')
+        response_req = self.client.get(requests_url)
+        self.assertEqual(response_req.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_req.data['requests']), 1)
+        req_id = response_req.data['requests'][0]['id']
+        self.assertEqual(response_req.data['requests'][0]['sender']['id'], self.user.id)
+
+        # 3. Reject/Delete request (test rejection first, then we'll send it again and accept it)
+        reject_url = reverse('friend_request_reject', args=[req_id])
+        response_rej = self.client.post(reject_url)
+        self.assertEqual(response_rej.status_code, status.HTTP_200_OK)
+        self.assertTrue(response_rej.data['success'])
+
+        # Verify incoming requests is now empty
+        response_req = self.client.get(requests_url)
+        self.assertEqual(len(response_req.data['requests']), 0)
+
+        # Send it again from request user's side
+        self.client.credentials()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+        self.client.post(send_url, {"receiver_id": user_friend.id})
+
+        # Switch back to friend's side to accept it
+        self.client.credentials()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {friend_token}')
+        response_req = self.client.get(requests_url)
+        req_id = response_req.data['requests'][0]['id']
+
+        accept_url = reverse('friend_request_accept', args=[req_id])
+        response_acc = self.client.post(accept_url)
+        self.assertEqual(response_acc.status_code, status.HTTP_200_OK)
+        self.assertTrue(response_acc.data['success'])
+
+        # 4. Check friends list from friend's side
+        friends_url = reverse('friends_list')
+        response_friends = self.client.get(friends_url)
+        self.assertEqual(response_friends.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_friends.data['friends']), 1)
+        self.assertEqual(response_friends.data['friends'][0]['id'], self.user.id)
+
+        # Check friends list from request user's side
+        self.client.credentials()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+        response_friends_u = self.client.get(friends_url)
+        self.assertEqual(response_friends_u.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_friends_u.data['friends']), 1)
+        self.assertEqual(response_friends_u.data['friends'][0]['id'], user_friend.id)
+
+        # 5. Remove Friend (unfriend)
+        remove_url = reverse('friend_remove', args=[user_friend.id])
+        response_rem = self.client.delete(remove_url)
+        self.assertEqual(response_rem.status_code, status.HTTP_200_OK)
+        self.assertTrue(response_rem.data['success'])
+
+        # Verify friends list is now empty
+        response_friends_u = self.client.get(friends_url)
+        self.assertEqual(len(response_friends_u.data['friends']), 0)
+
+

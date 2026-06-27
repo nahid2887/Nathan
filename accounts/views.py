@@ -6,7 +6,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 import random
 from django.core.mail import send_mail
-from .models import User, OTP
+from .models import User, OTP, Friendship
+from django.db.models import Q
 
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -25,6 +26,8 @@ from .serializers import (
     VerifyOTPSerializer,
     ResetPasswordSerializer,
     NearbyUserSerializer,
+    FriendUserSerializer,
+    FriendRequestSerializer,
 )
 
 
@@ -555,4 +558,231 @@ class NearbyUsersView(APIView):
                 "results": serializer.data
             },
             status=status.HTTP_200_OK
-        )
+        )
+
+
+class SendFriendRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Send Friend Request",
+        operation_description="Send a friend request to another user by providing their user ID.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['receiver_id'],
+            properties={
+                'receiver_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID of the user to send request to")
+            }
+        ),
+        responses={
+            201: openapi.Response(description="Friend request sent successfully"),
+            200: openapi.Response(description="Friend request accepted automatically (mutual request)"),
+            400: openapi.Response(description="Bad Request - self-request, duplicate request, or already friends"),
+            404: openapi.Response(description="Recipient not found")
+        }
+    )
+    def post(self, request):
+        receiver_id = request.data.get('receiver_id')
+        if not receiver_id:
+            return Response({"success": False, "message": "receiver_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            receiver_id_int = int(receiver_id)
+        except ValueError:
+            return Response({"success": False, "message": "Invalid receiver_id."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if receiver_id_int == request.user.id:
+            return Response({"success": False, "message": "You cannot send a friend request to yourself."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            receiver = User.objects.get(id=receiver_id_int)
+        except User.DoesNotExist:
+            return Response({"success": False, "message": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if there is an existing friendship or pending request in either direction
+        existing = Friendship.objects.filter(
+            Q(sender=request.user, receiver=receiver) |
+            Q(sender=receiver, receiver=request.user)
+        ).first()
+
+        if existing:
+            if existing.status == 'accepted':
+                return Response({"success": False, "message": "You are already friends with this user."}, status=status.HTTP_400_BAD_REQUEST)
+            elif existing.sender == request.user:
+                return Response({"success": False, "message": "Friend request already sent."}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                # A pending request exists from receiver to request.user. Auto-accept it.
+                existing.status = 'accepted'
+                existing.save()
+                return Response({"success": True, "message": "Friend request accepted automatically as they had already sent you a request.", "status": "accepted"}, status=status.HTTP_200_OK)
+
+        Friendship.objects.create(sender=request.user, receiver=receiver, status='pending')
+        return Response({"success": True, "message": "Friend request sent successfully.", "status": "pending"}, status=status.HTTP_201_CREATED)
+
+
+class IncomingFriendRequestsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Get Incoming Friend Requests",
+        operation_description="Retrieve a list of pending incoming friend requests.",
+        responses={
+            200: openapi.Response(
+                description="List of incoming friend requests",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "requests": openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    "id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    "sender": openapi.Schema(
+                                        type=openapi.TYPE_OBJECT,
+                                        properties={
+                                            "id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                            "full_name": openapi.Schema(type=openapi.TYPE_STRING),
+                                            "email": openapi.Schema(type=openapi.TYPE_STRING),
+                                            "profile_photo": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_URI),
+                                            "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                            "longitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                        }
+                                    ),
+                                    "created_at": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+                                }
+                            )
+                        )
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request):
+        requests = Friendship.objects.filter(receiver=request.user, status='pending').order_by('-created_at')
+        serializer = FriendRequestSerializer(requests, many=True, context={'request': request})
+        return Response({"success": True, "requests": serializer.data}, status=status.HTTP_200_OK)
+
+
+class AcceptFriendRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Accept Friend Request",
+        operation_description="Accept a pending incoming friend request by request ID.",
+        responses={
+            200: openapi.Response(description="Friend request accepted"),
+            404: openapi.Response(description="Request not found")
+        }
+    )
+    def post(self, request, request_id):
+        try:
+            friend_request = Friendship.objects.get(id=request_id, receiver=request.user, status='pending')
+        except Friendship.DoesNotExist:
+            return Response({"success": False, "message": "Friend request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        friend_request.status = 'accepted'
+        friend_request.save()
+        return Response({"success": True, "message": "Friend request accepted. You are now friends!"}, status=status.HTTP_200_OK)
+
+
+class RejectFriendRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Reject Friend Request",
+        operation_description="Reject or cancel a pending friend request by request ID.",
+        responses={
+            200: openapi.Response(description="Friend request deleted successfully"),
+            404: openapi.Response(description="Request not found")
+        }
+    )
+    def post(self, request, request_id):
+        try:
+            # Allow receiver to reject, or sender to cancel their pending request
+            friend_request = Friendship.objects.get(
+                Q(id=request_id, status='pending') &
+                (Q(receiver=request.user) | Q(sender=request.user))
+            )
+        except Friendship.DoesNotExist:
+            return Response({"success": False, "message": "Friend request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        friend_request.delete()
+        return Response({"success": True, "message": "Friend request deleted successfully."}, status=status.HTTP_200_OK)
+
+
+class FriendsListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Get Friends List",
+        operation_description="Retrieve a list of the user's friends.",
+        responses={
+            200: openapi.Response(
+                description="List of friends",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "friends": openapi.Schema(
+                            type=openapi.TYPE_ARRAY,
+                            items=openapi.Schema(
+                                type=openapi.TYPE_OBJECT,
+                                properties={
+                                    "id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                    "full_name": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "email": openapi.Schema(type=openapi.TYPE_STRING),
+                                    "profile_photo": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_URI),
+                                    "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    "longitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                                }
+                            )
+                        )
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request):
+        friendships = Friendship.objects.filter(
+            Q(status='accepted') &
+            (Q(sender=request.user) | Q(receiver=request.user))
+        )
+
+        friends = []
+        for f in friendships:
+            if f.sender == request.user:
+                friends.append(f.receiver)
+            else:
+                friends.append(f.sender)
+
+        serializer = FriendUserSerializer(friends, many=True, context={'request': request})
+        return Response({"success": True, "friends": serializer.data}, status=status.HTTP_200_OK)
+
+
+class RemoveFriendView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Remove Friend",
+        operation_description="Remove a user from your friends list.",
+        responses={
+            200: openapi.Response(description="Friend removed successfully"),
+            404: openapi.Response(description="Friendship not found")
+        }
+    )
+    def delete(self, request, friend_id):
+        try:
+            friendship = Friendship.objects.get(
+                Q(status='accepted') &
+                (
+                    Q(sender=request.user, receiver_id=friend_id) |
+                    Q(sender_id=friend_id, receiver=request.user)
+                )
+            )
+        except Friendship.DoesNotExist:
+            return Response({"success": False, "message": "Friendship not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        friendship.delete()
+        return Response({"success": True, "message": "Friend removed successfully."}, status=status.HTTP_200_OK)

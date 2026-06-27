@@ -8,6 +8,12 @@ from .views import (
     VerifyOTPView,
     ResetPasswordView,
     NearbyUsersView,
+    SendFriendRequestView,
+    IncomingFriendRequestsView,
+    AcceptFriendRequestView,
+    RejectFriendRequestView,
+    FriendsListView,
+    RemoveFriendView,
 )
 
 from rest_framework_simplejwt.views import (
@@ -67,5 +73,37 @@ urlpatterns = [
         'users/nearby/',
         NearbyUsersView.as_view(),
         name='nearby_users'
+    ),
+
+    # Friends endpoints
+    path(
+        'friends/requests/send/',
+        SendFriendRequestView.as_view(),
+        name='friend_request_send'
+    ),
+    path(
+        'friends/requests/',
+        IncomingFriendRequestsView.as_view(),
+        name='friend_requests_incoming'
+    ),
+    path(
+        'friends/requests/<int:request_id>/accept/',
+        AcceptFriendRequestView.as_view(),
+        name='friend_request_accept'
+    ),
+    path(
+        'friends/requests/<int:request_id>/reject/',
+        RejectFriendRequestView.as_view(),
+        name='friend_request_reject'
+    ),
+    path(
+        'friends/',
+        FriendsListView.as_view(),
+        name='friends_list'
+    ),
+    path(
+        'friends/<int:friend_id>/',
+        RemoveFriendView.as_view(),
+        name='friend_remove'
     ),
 ]
