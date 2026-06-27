@@ -369,4 +369,74 @@ class EventAPITests(APITestCase):
         self.assertLessEqual(response.data[0]['distance_km'], response.data[1]['distance_km'])
         self.assertLessEqual(response.data[1]['distance_km'], response.data[2]['distance_km'])
 
+    def test_upcoming_events_includes_friends_even_if_far_or_missing_coords(self):
+        upcoming_url = reverse('event-upcoming')
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # Set User 1 profile: Dhaka city coordinates and a 4 km distance radius
+        self.user1.latitude = 23.780769
+        self.user1.longitude = 90.407599
+        self.user1.distance_radius = 4
+        self.user1.save()
+
+        from django.utils import timezone
+        from datetime import timedelta
+        from accounts.models import Friendship
+
+        # Make User 1 and User 2 friends
+        Friendship.objects.create(sender=self.user1, receiver=self.user2, status='accepted')
+
+        # Event A: Upcoming, created by User 2 (Friend), 9 km away (Normally too far, but should be INCLUDED because they are friends)
+        event_a = Event.objects.create(
+            creator=self.user2,
+            name="Friend's Far Event",
+            date_time=timezone.now() + timedelta(days=1),
+            location="Far Away",
+            latitude=23.850000,
+            longitude=90.450000
+        )
+
+        # Event B: Upcoming, created by User 2 (Friend), has NO coordinates (Normally excluded, but should be INCLUDED because they are friends)
+        event_b = Event.objects.create(
+            creator=self.user2,
+            name="Friend's Coordsless Event",
+            date_time=timezone.now() + timedelta(days=2),
+            location="Somewhere"
+        )
+
+        # Recommendation A: Created by User 2 (Friend), 9 km away (Normally too far, but should be INCLUDED)
+        rec_a = Recommendation.objects.create(
+            creator=self.user2,
+            category="Food",
+            details="Friend's restaurant",
+            latitude=23.850000,
+            longitude=90.450000
+        )
+
+        # LookingFor A: Created by User 2 (Friend), 9 km away (Normally too far, but should be INCLUDED)
+        lf_a = LookingFor.objects.create(
+            creator=self.user2,
+            category="Retail",
+            details="Friend looking for bookstore",
+            latitude=23.850000,
+            longitude=90.450000
+        )
+
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Should retrieve all 4 items created by User 2 (Friend)
+        self.assertEqual(len(response.data), 4)
+
+        # Verify details
+        names = [item.get('name') or item.get('details') for item in response.data]
+        self.assertIn("Friend's Far Event", names)
+        self.assertIn("Friend's Coordsless Event", names)
+        self.assertIn("Friend's restaurant", names)
+        self.assertIn("Friend looking for bookstore", names)
+
+        # Coordsless event should have distance_km = None and appear at the end of the list
+        self.assertIsNone(response.data[-1]['distance_km'])
+        self.assertEqual(response.data[-1]['name'], "Friend's Coordsless Event")
+
 

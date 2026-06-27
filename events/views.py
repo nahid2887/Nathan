@@ -74,7 +74,7 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_summary="Get Upcoming Events and Recommendations within Distance Radius",
-        operation_description="Retrieve upcoming events and recommendations from other users that are within the user's distance_radius (in km).",
+        operation_description="Retrieve upcoming events and recommendations from other users that are within the user's distance_radius (in km) or created by the user's friends.",
         responses={
             200: UpcomingItemSerializer(many=True),
             400: "Location coordinates not set"
@@ -95,6 +95,20 @@ class EventViewSet(viewsets.ModelViewSet):
         radius = user.distance_radius if user.distance_radius is not None else 25
         now = timezone.now()
 
+        # Fetch friend IDs
+        from accounts.models import Friendship
+        from django.db.models import Q
+        
+        friendships = Friendship.objects.filter(
+            Q(status='accepted') & (Q(sender=user) | Q(receiver=user))
+        )
+        friend_ids = set()
+        for f in friendships:
+            if f.sender == user:
+                friend_ids.add(f.receiver_id)
+            else:
+                friend_ids.add(f.sender_id)
+
         # Fetch upcoming events created by other users
         events = Event.objects.filter(date_time__gte=now).exclude(creator=user)
 
@@ -108,35 +122,44 @@ class EventViewSet(viewsets.ModelViewSet):
 
         # Process events
         for event in events:
+            is_friend = event.creator_id in friend_ids
+            dist = None
             if event.latitude is not None and event.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, event.latitude, event.longitude)
-                if dist <= radius:
-                    event_data = EventSerializer(event, context={'request': request}).data
-                    event_data['type'] = 'event'
-                    event_data['distance_km'] = round(dist, 2)
-                    combined_items.append(event_data)
+            
+            if is_friend or (dist is not None and dist <= radius):
+                event_data = EventSerializer(event, context={'request': request}).data
+                event_data['type'] = 'event'
+                event_data['distance_km'] = round(dist, 2) if dist is not None else None
+                combined_items.append(event_data)
 
         # Process recommendations
         for rec in recommendations:
+            is_friend = rec.creator_id in friend_ids
+            dist = None
             if rec.latitude is not None and rec.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, rec.latitude, rec.longitude)
-                if dist <= radius:
-                    rec_data = RecommendationSerializer(rec, context={'request': request}).data
-                    rec_data['type'] = 'recommendation'
-                    rec_data['distance_km'] = round(dist, 2)
-                    combined_items.append(rec_data)
+
+            if is_friend or (dist is not None and dist <= radius):
+                rec_data = RecommendationSerializer(rec, context={'request': request}).data
+                rec_data['type'] = 'recommendation'
+                rec_data['distance_km'] = round(dist, 2) if dist is not None else None
+                combined_items.append(rec_data)
 
         # Process looking_for requests
         for lf in looking_fors:
+            is_friend = lf.creator_id in friend_ids
+            dist = None
             if lf.latitude is not None and lf.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, lf.latitude, lf.longitude)
-                if dist <= radius:
-                    lf_data = LookingForSerializer(lf, context={'request': request}).data
-                    lf_data['type'] = 'looking_for'
-                    lf_data['distance_km'] = round(dist, 2)
-                    combined_items.append(lf_data)
 
-        # Sort combined list by distance_km (ascending)
-        combined_items.sort(key=lambda x: x['distance_km'])
+            if is_friend or (dist is not None and dist <= radius):
+                lf_data = LookingForSerializer(lf, context={'request': request}).data
+                lf_data['type'] = 'looking_for'
+                lf_data['distance_km'] = round(dist, 2) if dist is not None else None
+                combined_items.append(lf_data)
+
+        # Sort combined list by distance_km (ascending). Put items with None distance at the end.
+        combined_items.sort(key=lambda x: x['distance_km'] if x['distance_km'] is not None else float('inf'))
 
         return Response(combined_items, status=status.HTTP_200_OK)

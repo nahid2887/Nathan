@@ -57,7 +57,7 @@ class EventWriteSerializer(serializers.ModelSerializer):
 
 class UpcomingItemSerializer(serializers.Serializer):
     type = serializers.CharField(help_text="Type of the item: 'event', 'recommendation', or 'looking_for'")
-    distance_km = serializers.FloatField(help_text="Distance in kilometers from the user location")
+    distance_km = serializers.FloatField(allow_null=True, required=False, help_text="Distance in kilometers from the user location")
     
     # Common/Event/Recommendation fields
     id = serializers.IntegerField(required=False)
