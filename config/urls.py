@@ -27,6 +27,7 @@ urlpatterns = [
     path('api/', include('recommendations.urls')),
     path('api/', include('looking_for.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/posts/', include('posts.urls')),
 
 
     path(
