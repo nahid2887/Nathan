@@ -31,6 +31,7 @@ ALLOWED_HOSTS = ['10.10.13.27', '127.0.0.1', 'localhost', '*']
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -40,6 +41,7 @@ INSTALLED_APPS = [
      'rest_framework',
     'rest_framework_simplejwt',
     'drf_yasg',
+    'channels',
 
 
 
@@ -48,6 +50,7 @@ INSTALLED_APPS = [
      'events',
      'recommendations',
      'looking_for',
+     'notifications',
 ]
 
 MIDDLEWARE = [
@@ -158,3 +161,10 @@ EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+ASGI_APPLICATION = 'config.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
