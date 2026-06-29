@@ -12,6 +12,7 @@ class NotificationListView(APIView):
     @swagger_auto_schema(
         operation_summary="List Notifications",
         operation_description="Retrieve a list of notifications for the authenticated user.",
+        tags=['Notifications'],
         responses={
             200: openapi.Response(
                 description="List of notifications",
@@ -45,6 +46,7 @@ class NotificationUnreadCountView(APIView):
     @swagger_auto_schema(
         operation_summary="Get Unread Notification Count",
         operation_description="Get the count of unread notifications for the authenticated user.",
+        tags=['Notifications'],
         responses={
             200: openapi.Response(
                 description="Unread count",
@@ -71,6 +73,7 @@ class MarkNotificationReadView(APIView):
     @swagger_auto_schema(
         operation_summary="Mark Notification as Read",
         operation_description="Mark a specific notification as read.",
+        tags=['Notifications'],
         responses={
             200: openapi.Response(
                 description="Notification marked as read successfully",
@@ -111,6 +114,7 @@ class MarkAllNotificationsReadView(APIView):
     @swagger_auto_schema(
         operation_summary="Mark All Notifications as Read",
         operation_description="Mark all unread notifications of the authenticated user as read.",
+        tags=['Notifications'],
         responses={
             200: openapi.Response(
                 description="All notifications marked as read",
