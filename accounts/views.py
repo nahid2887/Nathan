@@ -200,6 +200,7 @@ class ProfileView(APIView):
         operation_summary="Update User Profile",
         operation_description="Replace profile details (including uploading a photo) of the authenticated user.",
         request_body=ProfileSerializer,
+        consumes=['application/json', 'multipart/form-data'],
         responses={
             200: ProfileUpdateResponseSerializer,
             400: "Bad Request"
@@ -234,6 +235,7 @@ class ProfileView(APIView):
         operation_summary="Partially Update User Profile",
         operation_description="Partially update profile details (including uploading a photo) of the authenticated user.",
         request_body=ProfileSerializer,
+        consumes=['application/json', 'multipart/form-data'],
         responses={
             200: ProfileUpdateResponseSerializer,
             400: "Bad Request"

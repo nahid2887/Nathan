@@ -85,7 +85,8 @@ class LookingForAPITests(APITestCase):
             "category": "Services (Plumbing)",
             "details": "Need a reliable plumber ASAP.",
             "latitude": "23.7807692141219000",
-            "longitude": "90.4075994222697300"
+            "longitude": "90.4075994222697300",
+            "location_name": "Richmond plumbing"
         }
         response = self.client.post(self.list_create_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -93,6 +94,7 @@ class LookingForAPITests(APITestCase):
         self.assertEqual(response.data['creator']['email'], self.user1.email)
         self.assertEqual(float(response.data['latitude']), 23.7807692141219)
         self.assertEqual(float(response.data['longitude']), 90.40759942226973)
+        self.assertEqual(response.data['location_name'], "Richmond plumbing")
         self.assertEqual(response.data['type'], "looking_for")
 
     def test_create_looking_for_success_multipart_multiple_photos(self):
@@ -176,6 +178,7 @@ class LookingForAPITests(APITestCase):
         new_photos = [self.mock_photos[1]]
         data = {
             "details": "Updated Details",
+            "location_name": "Updated Location",
             "photos": new_photos
         }
         
@@ -183,6 +186,7 @@ class LookingForAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         lf.refresh_from_db()
         self.assertEqual(lf.details, "Updated Details")
+        self.assertEqual(lf.location_name, "Updated Location")
         # Existing photos should have been replaced with the new photo
         self.assertEqual(lf.photos.count(), 1)
         self.assertTrue(lf.photos.first().image.name.startswith('looking_for_photos/test_image_1'))

@@ -9,6 +9,7 @@ class Recommendation(models.Model):
     details = models.TextField()
     latitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
     longitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
+    location_name = models.CharField(max_length=255, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

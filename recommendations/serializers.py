@@ -26,7 +26,7 @@ class RecommendationSerializer(serializers.ModelSerializer):
         model = Recommendation
         fields = [
             'id', 'creator', 'category', 'rating', 
-            'business_name', 'details', 'latitude', 'longitude', 
+            'business_name', 'details', 'latitude', 'longitude', 'location_name',
             'photos', 'created_at', 'updated_at', 'type', 'distance_km'
         ]
         read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at', 'type', 'distance_km']
@@ -55,7 +55,7 @@ class RecommendationWriteSerializer(serializers.ModelSerializer):
         model = Recommendation
         fields = [
             'category', 'rating', 'business_name', 
-            'details', 'latitude', 'longitude', 'photos'
+            'details', 'latitude', 'longitude', 'location_name', 'photos'
         ]
 
     def create(self, validated_data):

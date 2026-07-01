@@ -85,7 +85,8 @@ class RecommendationAPITests(APITestCase):
             "category": "Services (Plumbing)",
             "details": "Need a reliable plumber in Richmond ASAP.",
             "latitude": "23.7807692141219000",
-            "longitude": "90.4075994222697300"
+            "longitude": "90.4075994222697300",
+            "location_name": "Plumber Office, Richmond"
         }
         response = self.client.post(self.list_create_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -93,6 +94,7 @@ class RecommendationAPITests(APITestCase):
         self.assertEqual(response.data['creator']['email'], self.user1.email)
         self.assertEqual(float(response.data['latitude']), 23.7807692141219)
         self.assertEqual(float(response.data['longitude']), 90.40759942226973)
+        self.assertEqual(response.data['location_name'], "Plumber Office, Richmond")
 
     def test_create_recommendation_success_multipart_multiple_photos(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
@@ -177,6 +179,7 @@ class RecommendationAPITests(APITestCase):
         new_photos = [self.mock_photos[1]]
         data = {
             "details": "Updated Details",
+            "location_name": "Updated Location",
             "photos": new_photos
         }
         
@@ -184,6 +187,7 @@ class RecommendationAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rec.refresh_from_db()
         self.assertEqual(rec.details, "Updated Details")
+        self.assertEqual(rec.location_name, "Updated Location")
         # Existing photos should have been replaced with the new photo
         self.assertEqual(rec.photos.count(), 1)
         self.assertTrue(rec.photos.first().image.name.startswith('recommendation_photos/test_image_1'))

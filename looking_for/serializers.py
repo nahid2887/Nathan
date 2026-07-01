@@ -26,7 +26,7 @@ class LookingForSerializer(serializers.ModelSerializer):
         model = LookingFor
         fields = [
             'id', 'creator', 'category', 'business_name', 
-            'details', 'latitude', 'longitude', 'photos', 
+            'details', 'latitude', 'longitude', 'location_name', 'photos', 
             'created_at', 'updated_at', 'type', 'distance_km'
         ]
         read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at', 'type', 'distance_km']
@@ -55,7 +55,7 @@ class LookingForWriteSerializer(serializers.ModelSerializer):
         model = LookingFor
         fields = [
             'category', 'business_name', 'details', 
-            'latitude', 'longitude', 'photos'
+            'latitude', 'longitude', 'location_name', 'photos'
         ]
 
     def create(self, validated_data):
