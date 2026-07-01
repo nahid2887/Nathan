@@ -10,6 +10,7 @@ class User(AbstractUser):
     longitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
     distance_radius = models.IntegerField(default=25, null=True, blank=True)
     about_me = models.TextField(null=True, blank=True)
+    location_name = models.CharField(max_length=255, null=True, blank=True)
     notify_events = models.BooleanField(default=True)
     notify_recommendations = models.BooleanField(default=True)
     notify_looking_for = models.BooleanField(default=True)

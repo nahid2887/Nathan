@@ -133,6 +133,7 @@ class AccountsAPITests(APITestCase):
 
     def test_get_profile_success(self):
         self.user.about_me = "Hello, I am a test user."
+        self.user.location_name = "Dhaka, Bangladesh"
         self.user.save()
 
         login_response = self.client.post(self.login_url, {
@@ -148,6 +149,7 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(response.data['profile']['email'], "existing@example.com")
         self.assertEqual(response.data['profile']['full_name'], "Existing User")
         self.assertEqual(response.data['profile']['about_me'], "Hello, I am a test user.")
+        self.assertEqual(response.data['profile']['location_name'], "Dhaka, Bangladesh")
 
     def test_update_profile_success(self):
         login_response = self.client.post(self.login_url, {
@@ -159,17 +161,20 @@ class AccountsAPITests(APITestCase):
 
         data = {
             "full_name": "Updated Name",
-            "about_me": "Updated about me description."
+            "about_me": "Updated about me description.",
+            "location_name": "New York, USA"
         }
         response = self.client.put(self.profile_url, data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
         self.assertEqual(response.data['profile']['full_name'], "Updated Name")
         self.assertEqual(response.data['profile']['about_me'], "Updated about me description.")
+        self.assertEqual(response.data['profile']['location_name'], "New York, USA")
         
         self.user.refresh_from_db()
         self.assertEqual(self.user.first_name, "Updated Name")
         self.assertEqual(self.user.about_me, "Updated about me description.")
+        self.assertEqual(self.user.location_name, "New York, USA")
 
     def test_update_profile_photo_success(self):
         login_response = self.client.post(self.login_url, {
@@ -218,15 +223,15 @@ class AccountsAPITests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
 
         data = {
-            "about_me": "Patched about me description."
+            "location_name": "Patched Location Name"
         }
         response = self.client.patch(self.profile_url, data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
-        self.assertEqual(response.data['profile']['about_me'], "Patched about me description.")
+        self.assertEqual(response.data['profile']['location_name'], "Patched Location Name")
 
         self.user.refresh_from_db()
-        self.assertEqual(self.user.about_me, "Patched about me description.")
+        self.assertEqual(self.user.location_name, "Patched Location Name")
 
     def test_update_profile_location_success(self):
         login_response = self.client.post(self.login_url, {
