@@ -159,6 +159,17 @@ class EventViewSet(viewsets.ModelViewSet):
                 lf_data['distance_km'] = round(dist, 2) if dist is not None else None
                 combined_items.append(lf_data)
 
+        # Process posts from friends
+        from posts.models import Post
+        from posts.serializers import PostSerializer
+        
+        friend_posts = Post.objects.filter(creator_id__in=friend_ids)
+        for post in friend_posts:
+            post_data = PostSerializer(post, context={'request': request}).data
+            post_data['type'] = 'post'
+            post_data['distance_km'] = None
+            combined_items.append(post_data)
+
         # Sort combined list by distance_km (ascending). Put items with None distance at the end.
         combined_items.sort(key=lambda x: x['distance_km'] if x['distance_km'] is not None else float('inf'))
 

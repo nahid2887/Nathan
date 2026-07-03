@@ -439,4 +439,53 @@ class EventAPITests(APITestCase):
         self.assertIsNone(response.data[-1]['distance_km'])
         self.assertEqual(response.data[-1]['name'], "Friend's Coordsless Event")
 
+    def test_upcoming_feed_with_friend_posts(self):
+        upcoming_url = reverse('event-upcoming')
+        
+        # Set User 1 coordinates
+        self.user1.latitude = 23.780769
+        self.user1.longitude = 90.407599
+        self.user1.save()
+
+        # Create a new user (User 3) who is not a friend
+        user3 = User.objects.create_user(
+            username="user3@example.com",
+            email="user3@example.com",
+            password="password123!",
+            first_name="User Three"
+        )
+
+        # Establish friendship between User 1 and User 2 (accepted)
+        from accounts.models import Friendship
+        Friendship.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            status='accepted'
+        )
+
+        # Create a Post by User 2 (Friend)
+        from posts.models import Post
+        Post.objects.create(
+            creator=self.user2,
+            content="Hello from your friend!"
+        )
+
+        # Create a Post by User 3 (Not a friend)
+        Post.objects.create(
+            creator=user3,
+            content="Hello from a stranger!"
+        )
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Verify friend's post is included, and stranger's post is excluded
+        post_items = [item for item in response.data if item['type'] == 'post']
+        self.assertEqual(len(post_items), 1)
+        self.assertEqual(post_items[0]['content'], "Hello from your friend!")
+        self.assertEqual(post_items[0]['creator']['email'], self.user2.email)
+        self.assertIsNone(post_items[0]['distance_km'])
+
+
 

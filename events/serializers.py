@@ -56,7 +56,7 @@ class EventWriteSerializer(serializers.ModelSerializer):
 
 
 class UpcomingItemSerializer(serializers.Serializer):
-    type = serializers.CharField(help_text="Type of the item: 'event', 'recommendation', or 'looking_for'")
+    type = serializers.CharField(help_text="Type of the item: 'event', 'recommendation', 'looking_for', or 'post'")
     distance_km = serializers.FloatField(allow_null=True, required=False, help_text="Distance in kilometers from the user location")
     
     # Common/Event/Recommendation fields
@@ -64,6 +64,7 @@ class UpcomingItemSerializer(serializers.Serializer):
     creator = serializers.DictField(required=False)
     latitude = serializers.DecimalField(max_digits=22, decimal_places=16, required=False)
     longitude = serializers.DecimalField(max_digits=22, decimal_places=16, required=False)
+    location_name = serializers.CharField(required=False, allow_null=True)
     created_at = serializers.DateTimeField(required=False)
     updated_at = serializers.DateTimeField(required=False)
 
@@ -83,3 +84,6 @@ class UpcomingItemSerializer(serializers.Serializer):
     details = serializers.CharField(required=False)
     photos = serializers.ListField(required=False)
 
+    # Post specific fields
+    content = serializers.CharField(required=False, allow_null=True)
+    image = serializers.ImageField(required=False, allow_null=True)
