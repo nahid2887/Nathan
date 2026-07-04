@@ -128,3 +128,81 @@ class PostTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['creator']['email'], "user1@example.com")
+
+    def test_like_post_toggle_success(self):
+        post = Post.objects.create(creator=self.user2, content="User 2 post")
+        like_url = reverse('post-like', kwargs={'pk': post.id})
+
+        # 1. Like the post (first toggle)
+        response = self.client.post(like_url)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['liked'])
+        self.assertEqual(response.data['likes_count'], 1)
+
+        # Verify in DB
+        self.assertEqual(post.likes.filter(user=self.user1).count(), 1)
+
+        # 2. Unlike the post (second toggle)
+        response = self.client.post(like_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['liked'])
+        self.assertEqual(response.data['likes_count'], 0)
+
+        # Verify in DB
+        self.assertEqual(post.likes.filter(user=self.user1).count(), 0)
+
+    def test_comment_post_success(self):
+        post = Post.objects.create(creator=self.user2, content="User 2 post")
+        comment_url = reverse('post-comment', kwargs={'pk': post.id})
+
+        data = {"content": "This is a comment!"}
+        response = self.client.post(comment_url, data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['content'], "This is a comment!")
+        self.assertEqual(response.data['user']['email'], "user1@example.com")
+
+        # Verify in DB
+        self.assertEqual(post.comments.filter(user=self.user1).count(), 1)
+
+    def test_comment_post_missing_content(self):
+        post = Post.objects.create(creator=self.user2, content="User 2 post")
+        comment_url = reverse('post-comment', kwargs={'pk': post.id})
+
+        # Test with empty/missing content
+        response = self.client.post(comment_url, {})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_upcoming_endpoint_includes_likes_and_comments(self):
+        from accounts.models import Friendship
+        # Establish friendship so User 2's posts show up in User 1's upcoming feed
+        Friendship.objects.create(sender=self.user1, receiver=self.user2, status='accepted')
+
+        post = Post.objects.create(creator=self.user2, content="Friend post")
+        
+        # Add a like from User 1
+        post.likes.create(user=self.user1)
+
+        # Add a comment from User 1
+        comment = post.comments.create(user=self.user1, content="Looks great!")
+
+        # Make sure user1 location is set so they can access the upcoming API
+        self.user1.latitude = 40.7128
+        self.user1.longitude = -74.0060
+        self.user1.save()
+
+        upcoming_url = reverse('event-upcoming')
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find the post in the returned items
+        post_items = [item for item in response.data if item.get('type') == 'post']
+        self.assertEqual(len(post_items), 1)
+        
+        post_item = post_items[0]
+        self.assertEqual(post_item['id'], post.id)
+        self.assertEqual(post_item['likes_count'], 1)
+        self.assertTrue(post_item['has_liked'])
+        self.assertEqual(len(post_item['comments']), 1)
+        self.assertEqual(post_item['comments'][0]['content'], "Looks great!")
+        self.assertEqual(post_item['comments'][0]['user']['email'], "user1@example.com")
+
