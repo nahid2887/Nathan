@@ -158,3 +158,54 @@ class AlertAPITests(APITestCase):
         self.assertIn(alert_b.id, alert_ids)
         self.assertIn(alert_c.id, alert_ids)
 
+    def test_active_alerts_feed(self):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        active_url = reverse('alert-active')
+
+        # 1. Alert A: Created 1 hour ago (within 24h)
+        alert_a = Alert.objects.create(
+            creator=self.user1,
+            content="Active alert",
+            location_name="Richmond",
+            latitude=23.780000,
+            longitude=90.400000,
+            alert_type="alert",
+            privacy="anyone"
+        )
+        Alert.objects.filter(id=alert_a.id).update(created_at=timezone.now() - timedelta(hours=1))
+
+        # 2. Alert B: Created 25 hours ago (outside 24h)
+        alert_b = Alert.objects.create(
+            creator=self.user1,
+            content="Old alert",
+            location_name="Richmond",
+            latitude=23.780000,
+            longitude=90.400000,
+            alert_type="missing",
+            privacy="anyone"
+        )
+        Alert.objects.filter(id=alert_b.id).update(created_at=timezone.now() - timedelta(hours=25))
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # 3. Test active feed without type filter -> should return only Alert A
+        response = self.client.get(active_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        alert_ids = [item['id'] for item in response.data]
+        self.assertIn(alert_a.id, alert_ids)
+        self.assertNotIn(alert_b.id, alert_ids)
+
+        # 4. Test filtering by alert_type=missing -> should return nothing (Alert B is missing but too old)
+        response = self.client.get(active_url, {'alert_type': 'missing'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 0)
+
+        # 5. Test filtering by alert_type=alert -> should return Alert A
+        response = self.client.get(active_url, {'alert_type': 'alert'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['id'], alert_a.id)
+
+
