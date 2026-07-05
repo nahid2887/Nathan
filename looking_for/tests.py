@@ -210,3 +210,96 @@ class LookingForAPITests(APITestCase):
         response = self.client.delete(detail_url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(LookingFor.objects.filter(id=lf.id).exists())
+
+    def test_likes_comments_shares(self):
+        lf = LookingFor.objects.create(
+            creator=self.user2,
+            category="Help",
+            details="Need help moving"
+        )
+        like_url = reverse('looking_for-like', args=[lf.id])
+        comment_url = reverse('looking_for-comment', args=[lf.id])
+        share_url = reverse('looking_for-share', args=[lf.id])
+
+        # Test Liking
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        response = self.client.post(like_url)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['liked'])
+        self.assertEqual(response.data['likes_count'], 1)
+
+        # Retrieve detail to see if likes updated
+        detail_url = reverse('looking_for-detail', args=[lf.id])
+        response = self.client.get(detail_url)
+        self.assertEqual(response.data['likes_count'], 1)
+        self.assertTrue(response.data['has_liked'])
+        self.assertFalse(response.data['has_shared'])
+
+        # Test Unliking
+        response = self.client.post(like_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['liked'])
+        self.assertEqual(response.data['likes_count'], 0)
+
+        # Like again to test persistence
+        self.client.post(like_url)
+
+        # Test Commenting
+        # Empty comment should fail
+        response = self.client.post(comment_url, {"content": ""})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Good comment
+        response = self.client.post(comment_url, {"content": "I can help you!"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['content'], "I can help you!")
+        self.assertEqual(response.data['user']['email'], self.user1.email)
+
+        # Verify comment on looking_for detail
+        response = self.client.get(detail_url)
+        self.assertEqual(response.data['comments_count'], 1)
+        self.assertEqual(len(response.data['comments']), 1)
+        self.assertEqual(response.data['comments'][0]['content'], "I can help you!")
+
+        # Test Sharing
+        response = self.client.post(share_url)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['shared'])
+        self.assertEqual(response.data['shares_count'], 1)
+
+        # Verify shares updated on detail
+        response = self.client.get(detail_url)
+        self.assertEqual(response.data['shares_count'], 1)
+        self.assertTrue(response.data['has_shared'])
+
+        # Verify through Upcoming API
+        # To fetch in upcoming API, user1 and user2 need location coordinates and to be within radius (or friends)
+        # Let's make user1 and user2 friends
+        from accounts.models import Friendship
+        Friendship.objects.create(sender=self.user1, receiver=self.user2, status='accepted')
+
+        # Let's set user1 coordinates so upcoming doesn't error out
+        self.user1.latitude = 23.780769
+        self.user1.longitude = 90.407599
+        self.user1.save()
+
+        upcoming_url = reverse('event-upcoming')
+        response = self.client.get(upcoming_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Find our looking_for request in the list
+        lf_in_upcoming = None
+        for item in response.data:
+            if item.get('type') == 'looking_for' and item.get('id') == lf.id:
+                lf_in_upcoming = item
+                break
+        
+        self.assertIsNotNone(lf_in_upcoming)
+        self.assertEqual(lf_in_upcoming['likes_count'], 1)
+        self.assertTrue(lf_in_upcoming['has_liked'])
+        self.assertEqual(lf_in_upcoming['comments_count'], 1)
+        self.assertEqual(len(lf_in_upcoming['comments']), 1)
+        self.assertEqual(lf_in_upcoming['comments'][0]['content'], "I can help you!")
+        self.assertEqual(lf_in_upcoming['shares_count'], 1)
+        self.assertTrue(lf_in_upcoming['has_shared'])
+

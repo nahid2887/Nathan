@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import LookingFor, LookingForPhoto
+from .models import LookingFor, LookingForPhoto, LookingForComment, LookingForLike, LookingForShare
 
 User = get_user_model()
 
@@ -16,20 +16,38 @@ class LookingForPhotoSerializer(serializers.ModelSerializer):
         model = LookingForPhoto
         fields = ['id', 'image']
 
+class LookingForCommentSerializer(serializers.ModelSerializer):
+    user = LookingForCreatorSerializer(read_only=True)
+
+    class Meta:
+        model = LookingForComment
+        fields = ['id', 'user', 'content', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
 class LookingForSerializer(serializers.ModelSerializer):
     creator = LookingForCreatorSerializer(read_only=True)
     photos = LookingForPhotoSerializer(many=True, read_only=True)
     type = serializers.SerializerMethodField()
     distance_km = serializers.SerializerMethodField()
+    likes_count = serializers.IntegerField(source='likes.count', read_only=True)
+    has_liked = serializers.SerializerMethodField()
+    comments = LookingForCommentSerializer(many=True, read_only=True)
+    comments_count = serializers.IntegerField(source='comments.count', read_only=True)
+    shares_count = serializers.IntegerField(source='shares.count', read_only=True)
+    has_shared = serializers.SerializerMethodField()
 
     class Meta:
         model = LookingFor
         fields = [
             'id', 'creator', 'category', 'business_name', 
             'details', 'latitude', 'longitude', 'location_name', 'photos', 
-            'created_at', 'updated_at', 'type', 'distance_km'
+            'created_at', 'updated_at', 'type', 'distance_km',
+            'likes_count', 'has_liked', 'comments', 'comments_count', 'shares_count', 'has_shared'
         ]
-        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at', 'type', 'distance_km']
+        read_only_fields = [
+            'id', 'creator', 'photos', 'created_at', 'updated_at', 'type', 'distance_km',
+            'likes_count', 'has_liked', 'comments', 'comments_count', 'shares_count', 'has_shared'
+        ]
 
     def get_type(self, obj):
         return 'looking_for'
@@ -44,6 +62,19 @@ class LookingForSerializer(serializers.ModelSerializer):
                     dist = haversine_distance(user.latitude, user.longitude, obj.latitude, obj.longitude)
                     return round(dist, 2)
         return None
+
+    def get_has_liked(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.likes.filter(user=request.user).exists()
+        return False
+
+    def get_has_shared(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.shares.filter(user=request.user).exists()
+        return False
+
 
 class LookingForWriteSerializer(serializers.ModelSerializer):
     photos = serializers.ListField(

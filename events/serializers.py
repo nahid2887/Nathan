@@ -87,3 +87,12 @@ class UpcomingItemSerializer(serializers.Serializer):
     # Post specific fields
     content = serializers.CharField(required=False, allow_null=True)
     image = serializers.ImageField(required=False, allow_null=True)
+
+    # Likes, Comments, Shares fields
+    likes_count = serializers.IntegerField(required=False)
+    has_liked = serializers.BooleanField(required=False)
+    comments = serializers.ListField(required=False)
+    comments_count = serializers.IntegerField(required=False)
+    shares_count = serializers.IntegerField(required=False)
+    has_shared = serializers.BooleanField(required=False)
+
