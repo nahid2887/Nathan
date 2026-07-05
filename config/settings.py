@@ -52,6 +52,7 @@ INSTALLED_APPS = [
      'looking_for',
      'notifications',
      'posts',
+     'alert',
 ]
 
 MIDDLEWARE = [

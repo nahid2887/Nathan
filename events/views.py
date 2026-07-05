@@ -109,25 +109,26 @@ class EventViewSet(viewsets.ModelViewSet):
             else:
                 friend_ids.add(f.sender_id)
 
-        # Fetch upcoming events created by other users
-        events = Event.objects.filter(date_time__gte=now).exclude(creator=user)
+        # Fetch upcoming events (including user's own)
+        events = Event.objects.filter(date_time__gte=now)
 
-        # Fetch recommendations created by other users
-        recommendations = Recommendation.objects.exclude(creator=user)
+        # Fetch recommendations (including user's own)
+        recommendations = Recommendation.objects.all()
 
-        # Fetch looking_for requests created by other users
-        looking_fors = LookingFor.objects.exclude(creator=user)
+        # Fetch looking_for requests (including user's own)
+        looking_fors = LookingFor.objects.all()
 
         combined_items = []
 
         # Process events
         for event in events:
+            is_own = event.creator == user
             is_friend = event.creator_id in friend_ids
             dist = None
             if event.latitude is not None and event.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, event.latitude, event.longitude)
             
-            if is_friend or (dist is not None and dist <= radius):
+            if is_own or is_friend or (dist is not None and dist <= radius):
                 event_data = EventSerializer(event, context={'request': request}).data
                 event_data['type'] = 'event'
                 event_data['distance_km'] = round(dist, 2) if dist is not None else None
@@ -135,12 +136,13 @@ class EventViewSet(viewsets.ModelViewSet):
 
         # Process recommendations
         for rec in recommendations:
+            is_own = rec.creator == user
             is_friend = rec.creator_id in friend_ids
             dist = None
             if rec.latitude is not None and rec.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, rec.latitude, rec.longitude)
 
-            if is_friend or (dist is not None and dist <= radius):
+            if is_own or is_friend or (dist is not None and dist <= radius):
                 rec_data = RecommendationSerializer(rec, context={'request': request}).data
                 rec_data['type'] = 'recommendation'
                 rec_data['distance_km'] = round(dist, 2) if dist is not None else None
@@ -148,16 +150,18 @@ class EventViewSet(viewsets.ModelViewSet):
 
         # Process looking_for requests
         for lf in looking_fors:
+            is_own = lf.creator == user
             is_friend = lf.creator_id in friend_ids
             dist = None
             if lf.latitude is not None and lf.longitude is not None:
                 dist = haversine_distance(user.latitude, user.longitude, lf.latitude, lf.longitude)
 
-            if is_friend or (dist is not None and dist <= radius):
+            if is_own or is_friend or (dist is not None and dist <= radius):
                 lf_data = LookingForSerializer(lf, context={'request': request}).data
                 lf_data['type'] = 'looking_for'
                 lf_data['distance_km'] = round(dist, 2) if dist is not None else None
                 combined_items.append(lf_data)
+
 
         # Process posts from friends
         from posts.models import Post

@@ -344,30 +344,31 @@ class EventAPITests(APITestCase):
         response = self.client.get(upcoming_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         
-        # Verify exactly 3 items are returned (LookingFor A, Recommendation A, and Event A)
-        self.assertEqual(len(response.data), 3)
+        # Verify exactly 6 items are returned (including user's own items)
+        self.assertEqual(len(response.data), 6)
         
-        # Verify closest item is first: LookingFor A (approx 0.14 km)
+        # Verify first two closest items are looking_for requests (approx 0.14 km)
         self.assertEqual(response.data[0]['type'], "looking_for")
-        self.assertEqual(response.data[0]['details'], "Looking for bookstore")
-        self.assertIn('distance_km', response.data[0])
         self.assertLess(response.data[0]['distance_km'], 0.3)
+        self.assertEqual(response.data[1]['type'], "looking_for")
+        self.assertLess(response.data[1]['distance_km'], 0.3)
         
-        # Verify second closest is Recommendation A (approx 0.48 km)
-        self.assertEqual(response.data[1]['type'], "recommendation")
-        self.assertEqual(response.data[1]['details'], "Best plumber near us!")
-        self.assertIn('distance_km', response.data[1])
-        self.assertLess(response.data[1]['distance_km'], 1.0)
+        # Verify next two are recommendations (approx 0.48 km)
+        self.assertEqual(response.data[2]['type'], "recommendation")
+        self.assertLess(response.data[2]['distance_km'], 1.0)
+        self.assertEqual(response.data[3]['type'], "recommendation")
+        self.assertLess(response.data[3]['distance_km'], 1.0)
         
-        # Verify third item is Event A (approx 1.1 km)
-        self.assertEqual(response.data[2]['type'], "event")
-        self.assertEqual(response.data[2]['name'], "Event A (Nearby)")
-        self.assertIn('distance_km', response.data[2])
-        self.assertGreater(response.data[2]['distance_km'], 1.0)
+        # Verify last two are events (approx 1.1 km)
+        self.assertEqual(response.data[4]['type'], "event")
+        self.assertGreater(response.data[4]['distance_km'], 1.0)
+        self.assertEqual(response.data[5]['type'], "event")
+        self.assertGreater(response.data[5]['distance_km'], 1.0)
 
         # Verify sorted ascending by distance_km
-        self.assertLessEqual(response.data[0]['distance_km'], response.data[1]['distance_km'])
-        self.assertLessEqual(response.data[1]['distance_km'], response.data[2]['distance_km'])
+        for i in range(5):
+            self.assertLessEqual(response.data[i]['distance_km'], response.data[i+1]['distance_km'])
+
 
     def test_upcoming_events_includes_friends_even_if_far_or_missing_coords(self):
         upcoming_url = reverse('event-upcoming')
