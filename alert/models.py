@@ -21,6 +21,7 @@ class Alert(models.Model):
     ]
 
     creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='alerts')
+    title = models.CharField(max_length=255, default='', blank=True)
     content = models.TextField(max_length=500, blank=True, default='')
     location_name = models.CharField(max_length=255)
     latitude = models.DecimalField(max_digits=22, decimal_places=16)
