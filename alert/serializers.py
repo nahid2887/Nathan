@@ -19,7 +19,7 @@ class AlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alert
         fields = [
-            'id', 'creator', 'content', 'location_name', 'latitude', 'longitude',
+            'id', 'creator', 'title', 'content', 'location_name', 'latitude', 'longitude',
             'alert_type', 'alert_level', 'privacy', 'created_at', 'updated_at', 'type', 'distance_km'
         ]
         read_only_fields = ['id', 'creator', 'created_at', 'updated_at', 'type', 'distance_km']
@@ -42,7 +42,7 @@ class AlertWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alert
         fields = [
-            'content', 'location_name', 'latitude', 'longitude',
+            'title', 'content', 'location_name', 'latitude', 'longitude',
             'alert_type', 'alert_level', 'privacy'
         ]
 

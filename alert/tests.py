@@ -43,6 +43,7 @@ class AlertAPITests(APITestCase):
     def test_create_alert_success(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
         data = {
+            "title": "Leak Alert",
             "content": "Water leak",
             "location_name": "Bondi, NSW",
             "latitude": "23.780769",
@@ -53,6 +54,7 @@ class AlertAPITests(APITestCase):
         response = self.client.post(self.list_create_url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['creator']['email'], self.user1.email)
+        self.assertEqual(response.data['title'], "Leak Alert")
         self.assertEqual(response.data['alert_type'], "alert")
         self.assertEqual(response.data['type'], "alert")
 
