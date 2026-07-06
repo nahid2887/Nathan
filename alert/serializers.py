@@ -15,14 +15,15 @@ class AlertSerializer(serializers.ModelSerializer):
     creator = AlertCreatorSerializer(read_only=True)
     type = serializers.SerializerMethodField()
     distance_km = serializers.SerializerMethodField()
+    hours_ago = serializers.SerializerMethodField()
 
     class Meta:
         model = Alert
         fields = [
             'id', 'creator', 'title', 'content', 'location_name', 'latitude', 'longitude',
-            'alert_type', 'alert_level', 'privacy', 'created_at', 'updated_at', 'type', 'distance_km'
+            'alert_type', 'alert_level', 'privacy', 'created_at', 'updated_at', 'type', 'distance_km', 'hours_ago'
         ]
-        read_only_fields = ['id', 'creator', 'created_at', 'updated_at', 'type', 'distance_km']
+        read_only_fields = ['id', 'creator', 'created_at', 'updated_at', 'type', 'distance_km', 'hours_ago']
 
     def get_type(self, obj):
         return 'alert'
@@ -37,6 +38,11 @@ class AlertSerializer(serializers.ModelSerializer):
                     dist = haversine_distance(user.latitude, user.longitude, obj.latitude, obj.longitude)
                     return round(dist, 2)
         return None
+
+    def get_hours_ago(self, obj):
+        from django.utils import timezone
+        diff = timezone.now() - obj.created_at
+        return round(diff.total_seconds() / 3600, 1)
 
 class AlertWriteSerializer(serializers.ModelSerializer):
     class Meta:

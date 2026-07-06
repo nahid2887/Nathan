@@ -54,6 +54,7 @@ INSTALLED_APPS = [
      'posts',
      'alert',
      'message',
+     'listing',
 ]
 
 MIDDLEWARE = [

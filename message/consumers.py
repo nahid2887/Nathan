@@ -7,6 +7,34 @@ from .serializers import ConversationSerializer, MessageSerializer
 
 User = get_user_model()
 
+class MockRequest:
+    def __init__(self, base_url):
+        self.base_url = base_url
+
+    def build_absolute_uri(self, url):
+        if not url:
+            return None
+        if url.startswith('http://') or url.startswith('https://'):
+            return url
+        return f"{self.base_url.rstrip('/')}/{url.lstrip('/')}"
+
+def get_mock_request(scope):
+    headers = dict(scope.get('headers', []))
+    host = headers.get(b'host', b'').decode('utf-8')
+    if not host:
+        server = scope.get('server')
+        if server:
+            host = f"{server[0]}:{server[1]}"
+        else:
+            host = "127.0.0.1:8003"
+    
+    proto = headers.get(b'x-forwarded-proto', b'').decode('utf-8')
+    if not proto:
+        proto = 'https' if scope.get('scheme') in ['wss', 'https'] else 'http'
+        
+    base_url = f"{proto}://{host}"
+    return MockRequest(base_url)
+
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope.get('user')
@@ -92,14 +120,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_message_history(self):
         try:
+            mock_request = get_mock_request(self.scope)
             conversation = Conversation.objects.get(id=self.conversation_id)
             messages = conversation.messages.all().order_by('created_at')
-            return MessageSerializer(messages, many=True).data
+            return MessageSerializer(messages, many=True, context={'request': mock_request}).data
         except Conversation.DoesNotExist:
             return []
 
     @database_sync_to_async
     def save_message(self, content):
+        mock_request = get_mock_request(self.scope)
         conversation = Conversation.objects.get(id=self.conversation_id)
         # Update updated_at of the conversation
         conversation.save() # auto_now updates updated_at
@@ -109,7 +139,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             sender=self.user,
             content=content
         )
-        return MessageSerializer(msg).data
+        return MessageSerializer(msg, context={'request': mock_request}).data
 
     async def trigger_conversation_list_updates(self):
         participants = await self.get_participants()
@@ -167,7 +197,7 @@ class ConversationListConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_conversations(self):
-        # We need to supply request context or just serialize directly passing the user in context
+        mock_request = get_mock_request(self.scope)
         conversations = Conversation.objects.filter(participants=self.user).order_by('-updated_at')
-        serializer = ConversationSerializer(conversations, many=True, context={'user': self.user})
+        serializer = ConversationSerializer(conversations, many=True, context={'request': mock_request, 'user': self.user})
         return serializer.data

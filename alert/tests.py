@@ -57,6 +57,8 @@ class AlertAPITests(APITestCase):
         self.assertEqual(response.data['title'], "Leak Alert")
         self.assertEqual(response.data['alert_type'], "alert")
         self.assertEqual(response.data['type'], "alert")
+        self.assertIn('hours_ago', response.data)
+        self.assertLessEqual(response.data['hours_ago'], 0.1)
 
     def test_update_alert_permissions(self):
         # Create alert as user1

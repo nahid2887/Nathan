@@ -30,6 +30,8 @@ urlpatterns = [
     path('api/posts/', include('posts.urls')),
     path('api/', include('alert.urls')),
     path('api/', include('message.urls')),
+    path('api/', include('listing.urls')),
+
 
 
     path(
