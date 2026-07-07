@@ -16,6 +16,7 @@ class AccountsAPITests(APITestCase):
         self.forgot_password_url = reverse('forgot_password')
         self.verify_otp_url = reverse('verify_otp')
         self.reset_password_url = reverse('reset_password')
+        self.plans_url = reverse('plans_list')
 
         self.user_data = {
             "full_name": "Test User",
@@ -140,6 +141,32 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(response.data['success'])
         self.assertIn('confirm_new_password', response.data['errors'])
+
+    def test_get_plans_unauthenticated(self):
+        response = self.client.get(self.plans_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_plans_success(self):
+        from custom_admin.models import SubscriptionPlan
+        SubscriptionPlan.objects.create(
+            name="Community Premium",
+            price="10.00",
+            billing_cycle="monthly",
+            discount_offer=10
+        )
+
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        response = self.client.get(self.plans_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['plans'][0]['name'], "Community Premium")
 
     def test_get_profile_unauthenticated(self):
         response = self.client.get(self.profile_url)

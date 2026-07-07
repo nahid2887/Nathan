@@ -797,4 +797,37 @@ class RemoveFriendView(APIView):
             return Response({"success": False, "message": "Friendship not found."}, status=status.HTTP_404_NOT_FOUND)
 
         friendship.delete()
-        return Response({"success": True, "message": "Friend removed successfully."}, status=status.HTTP_200_OK)
+        return Response({"success": True, "message": "Friend removed successfully."}, status=status.HTTP_200_OK)
+
+
+class PlanListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="List Subscription Plans",
+        operation_description="Get the list of all active subscription plans.",
+        responses={
+            200: openapi.Response(
+                description="Success",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "count": openapi.Schema(type=openapi.TYPE_INTEGER),
+                        "plans": openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_OBJECT))
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request):
+        from custom_admin.models import SubscriptionPlan
+        from custom_admin.serializers import SubscriptionPlanSerializer
+        
+        plans = SubscriptionPlan.objects.all()
+        serializer = SubscriptionPlanSerializer(plans, many=True)
+        return Response({
+            "success": True,
+            "count": len(plans),
+            "plans": serializer.data
+        }, status=status.HTTP_200_OK)
