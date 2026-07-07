@@ -159,3 +159,64 @@ class ListingAPITests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
         response = self.client.delete(detail_url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_nearby_listings_filtering_by_distance(self):
+        # User 1 is at latitude="23.780769", longitude="90.407599" (Gulshan)
+        # Set user1's distance_radius to 5 km
+        self.user1.distance_radius = 5
+        self.user1.save()
+
+        # User 2 is at latitude="23.810332", longitude="90.412518"
+        # Create listing 1 (close to user 1, within 5km)
+        listing_close = Listing.objects.create(
+            creator=self.user2,
+            title="Close Item",
+            category="Furniture",
+            status="free",
+            price="0.00",
+            condition="good",
+            latitude="23.781000",
+            longitude="90.408000",
+            location_name="Gulshan 1"
+        )
+
+        # Create listing 2 (far from user 1, more than 15km)
+        listing_far = Listing.objects.create(
+            creator=self.user2,
+            title="Far Item",
+            category="Furniture",
+            status="free",
+            price="0.00",
+            condition="good",
+            latitude="23.950000",
+            longitude="90.550000",
+            location_name="Savar"
+        )
+
+        # Create listing 3 (owned by User 1 - should be excluded)
+        listing_own = Listing.objects.create(
+            creator=self.user1,
+            title="My Own Item",
+            category="Furniture",
+            status="free",
+            price="0.00",
+            condition="good",
+            latitude="23.780769",
+            longitude="90.407599",
+            location_name="My House"
+        )
+
+        nearby_url = reverse('listing-nearby')
+        
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        response = self.client.get(nearby_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify close item is returned, far and own items are excluded
+        titles = [item['title'] for item in response.data]
+        self.assertIn("Close Item", titles)
+        self.assertNotIn("Far Item", titles)
+        self.assertNotIn("My Own Item", titles)
+
+        # Verify distance calculation is returned
+        self.assertIsNotNone(response.data[0]['distance_km'])
