@@ -88,8 +88,11 @@ class LoginSerializer(serializers.Serializer):
         email = attrs.get("email")
         password = attrs.get("password")
 
+        user_obj = User.objects.filter(email=email).first()
+        username = user_obj.username if user_obj else email
+
         user = authenticate(
-            username=email,
+            username=username,
             password=password
         )
 

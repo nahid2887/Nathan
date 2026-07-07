@@ -36,6 +36,20 @@ class AccountsAPITests(APITestCase):
         self.assertTrue(response.data['success'])
         self.assertEqual(response.data['user']['email'], self.user_data['email'])
 
+    def test_superuser_login_success(self):
+        admin = User.objects.create_superuser(
+            username="adminuser",
+            email="admin@example.com",
+            password="adminpassword123"
+        )
+        response = self.client.post(self.login_url, {
+            "email": "admin@example.com",
+            "password": "adminpassword123"
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['user']['email'], "admin@example.com")
+
     def test_register_user_duplicate_email(self):
         # Register once
         self.client.post(self.register_url, self.user_data)
