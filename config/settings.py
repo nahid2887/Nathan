@@ -55,6 +55,7 @@ INSTALLED_APPS = [
      'alert',
      'message',
      'listing',
+     'custom_admin',
 ]
 
 MIDDLEWARE = [
