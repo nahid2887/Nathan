@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status, parsers
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 from .models import Listing
 from .serializers import ListingSerializer, ListingWriteSerializer
 
@@ -58,6 +59,12 @@ class ListingViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         method='get',
+        manual_parameters=[
+            openapi.Parameter('distance', openapi.IN_QUERY, description="Search radius in kilometers (defaults to user's distance_radius or 25)", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('category', openapi.IN_QUERY, description="Filter by category (partial match)", type=openapi.TYPE_STRING),
+            openapi.Parameter('status', openapi.IN_QUERY, description="Filter by status ('free' or 'for_sale')", type=openapi.TYPE_STRING),
+            openapi.Parameter('search', openapi.IN_QUERY, description="Search term in title", type=openapi.TYPE_STRING),
+        ],
         responses={200: ListingSerializer(many=True)},
         tags=['Listings'],
         operation_summary="Get nearby listings within user's profile distance radius"
@@ -97,6 +104,10 @@ class ListingViewSet(viewsets.ModelViewSet):
         category = request.query_params.get('category')
         if category:
             listings = listings.filter(category__icontains=category)
+
+        status_param = request.query_params.get('status')
+        if status_param:
+            listings = listings.filter(status=status_param)
 
         search = request.query_params.get('search')
         if search:

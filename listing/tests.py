@@ -220,3 +220,34 @@ class ListingAPITests(APITestCase):
 
         # Verify distance calculation is returned
         self.assertIsNotNone(response.data[0]['distance_km'])
+
+        # Test filtering by category
+        response = self.client.get(nearby_url, {'category': 'Furniture'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], "Close Item")
+
+        # Create another close listing with category "Books" and status "for_sale"
+        Listing.objects.create(
+            creator=self.user2,
+            title="Book Item",
+            category="Books",
+            status="for_sale",
+            price="10.00",
+            condition="new",
+            latitude="23.781000",
+            longitude="90.408000",
+            location_name="Gulshan 1"
+        )
+
+        # Test filtering by status "for_sale"
+        response = self.client.get(nearby_url, {'status': 'for_sale'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], "Book Item")
+
+        # Test filtering by status "free"
+        response = self.client.get(nearby_url, {'status': 'free'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], "Close Item")
