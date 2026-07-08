@@ -28,6 +28,7 @@ from .serializers import (
     NearbyUserSerializer,
     FriendUserSerializer,
     FriendRequestSerializer,
+    MyItemsResponseSerializer,
 )
 
 
@@ -830,4 +831,47 @@ class PlanListView(APIView):
             "success": True,
             "count": len(plans),
             "plans": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+class MyItemsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Get User's Created Items",
+        operation_description="Retrieve all alerts, events, recommendations, and looking-for posts created by the authenticated user in a single request.",
+        responses={
+            200: MyItemsResponseSerializer
+        }
+    )
+    def get(self, request):
+        from alert.models import Alert
+        from alert.serializers import AlertSerializer
+        from events.models import Event
+        from events.serializers import EventSerializer
+        from recommendations.models import Recommendation
+        from recommendations.serializers import RecommendationSerializer
+        from looking_for.models import LookingFor
+        from looking_for.serializers import LookingForSerializer
+
+        user = request.user
+
+        alerts = Alert.objects.filter(creator=user)
+        events = Event.objects.filter(creator=user)
+        recommendations = Recommendation.objects.filter(creator=user)
+        looking_for = LookingFor.objects.filter(creator=user)
+
+        context = {'request': request}
+
+        alerts_data = AlertSerializer(alerts, many=True, context=context).data
+        events_data = EventSerializer(events, many=True, context=context).data
+        recommendations_data = RecommendationSerializer(recommendations, many=True, context=context).data
+        looking_for_data = LookingForSerializer(looking_for, many=True, context=context).data
+
+        return Response({
+            "success": True,
+            "alerts": alerts_data,
+            "events": events_data,
+            "recommendations": recommendations_data,
+            "looking_for": looking_for_data
         }, status=status.HTTP_200_OK)

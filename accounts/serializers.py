@@ -235,4 +235,12 @@ class FriendRequestSerializer(serializers.ModelSerializer):
         from .models import Friendship
         model = Friendship
         fields = ['id', 'sender', 'created_at']
-        read_only_fields = fields
+        read_only_fields = fields
+
+
+class MyItemsResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField()
+    alerts = serializers.ListField(child=serializers.DictField())
+    events = serializers.ListField(child=serializers.DictField())
+    recommendations = serializers.ListField(child=serializers.DictField())
+    looking_for = serializers.ListField(child=serializers.DictField())

@@ -15,6 +15,7 @@ from .views import (
     FriendsListView,
     RemoveFriendView,
     PlanListView,
+    MyItemsView,
 )
 
 from rest_framework_simplejwt.views import (
@@ -111,5 +112,10 @@ urlpatterns = [
         'plans/',
         PlanListView.as_view(),
         name='plans_list'
+    ),
+    path(
+        'my-items/',
+        MyItemsView.as_view(),
+        name='my_items'
     ),
 ]

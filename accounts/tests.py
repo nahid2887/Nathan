@@ -17,6 +17,7 @@ class AccountsAPITests(APITestCase):
         self.verify_otp_url = reverse('verify_otp')
         self.reset_password_url = reverse('reset_password')
         self.plans_url = reverse('plans_list')
+        self.my_items_url = reverse('my_items')
 
         self.user_data = {
             "full_name": "Test User",
@@ -167,6 +168,72 @@ class AccountsAPITests(APITestCase):
         self.assertTrue(response.data['success'])
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['plans'][0]['name'], "Community Premium")
+
+    def test_get_my_items_unauthenticated(self):
+        response = self.client.get(self.my_items_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_get_my_items_success(self):
+        from alert.models import Alert
+        from events.models import Event
+        from recommendations.models import Recommendation
+        from looking_for.models import LookingFor
+        from django.utils import timezone
+
+        Alert.objects.create(
+            creator=self.user,
+            title="My Test Alert",
+            content="Testing alerts",
+            location_name="Gulshan 1",
+            latitude="23.780769",
+            longitude="90.407599"
+        )
+        Event.objects.create(
+            creator=self.user,
+            name="My Test Event",
+            date_time=timezone.now() + timezone.timedelta(days=2),
+            location="Gulshan 1",
+            latitude="23.780769",
+            longitude="90.407599"
+        )
+        Recommendation.objects.create(
+            creator=self.user,
+            category="Food",
+            rating=5,
+            business_name="Good Burgers",
+            details="Great burgers",
+            latitude="23.780769",
+            longitude="90.407599",
+            location_name="Gulshan 1"
+        )
+        LookingFor.objects.create(
+            creator=self.user,
+            category="Help",
+            business_name="Need a plumber",
+            details="Leaking pipe",
+            latitude="23.780769",
+            longitude="90.407599",
+            location_name="Gulshan 1"
+        )
+
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        response = self.client.get(self.my_items_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(len(response.data['alerts']), 1)
+        self.assertEqual(response.data['alerts'][0]['title'], "My Test Alert")
+        self.assertEqual(len(response.data['events']), 1)
+        self.assertEqual(response.data['events'][0]['name'], "My Test Event")
+        self.assertEqual(len(response.data['recommendations']), 1)
+        self.assertEqual(response.data['recommendations'][0]['business_name'], "Good Burgers")
+        self.assertEqual(len(response.data['looking_for']), 1)
+        self.assertEqual(response.data['looking_for'][0]['business_name'], "Need a plumber")
 
     def test_get_profile_unauthenticated(self):
         response = self.client.get(self.profile_url)
