@@ -868,10 +868,17 @@ class MyItemsView(APIView):
         recommendations_data = RecommendationSerializer(recommendations, many=True, context=context).data
         looking_for_data = LookingForSerializer(looking_for, many=True, context=context).data
 
+        combined_items = list(alerts_data) + list(events_data) + list(recommendations_data) + list(looking_for_data)
+
+        from django.utils.dateparse import parse_datetime
+        from django.utils import timezone
+
+        combined_items.sort(
+            key=lambda x: parse_datetime(x.get('created_at')) if x.get('created_at') else timezone.now(),
+            reverse=True
+        )
+
         return Response({
             "success": True,
-            "alerts": alerts_data,
-            "events": events_data,
-            "recommendations": recommendations_data,
-            "looking_for": looking_for_data
+            "items": combined_items
         }, status=status.HTTP_200_OK)

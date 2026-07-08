@@ -180,7 +180,7 @@ class AccountsAPITests(APITestCase):
         from looking_for.models import LookingFor
         from django.utils import timezone
 
-        Alert.objects.create(
+        alert = Alert.objects.create(
             creator=self.user,
             title="My Test Alert",
             content="Testing alerts",
@@ -188,7 +188,7 @@ class AccountsAPITests(APITestCase):
             latitude="23.780769",
             longitude="90.407599"
         )
-        Event.objects.create(
+        event = Event.objects.create(
             creator=self.user,
             name="My Test Event",
             date_time=timezone.now() + timezone.timedelta(days=2),
@@ -196,7 +196,7 @@ class AccountsAPITests(APITestCase):
             latitude="23.780769",
             longitude="90.407599"
         )
-        Recommendation.objects.create(
+        rec = Recommendation.objects.create(
             creator=self.user,
             category="Food",
             rating=5,
@@ -206,7 +206,7 @@ class AccountsAPITests(APITestCase):
             longitude="90.407599",
             location_name="Gulshan 1"
         )
-        LookingFor.objects.create(
+        lf = LookingFor.objects.create(
             creator=self.user,
             category="Help",
             business_name="Need a plumber",
@@ -215,6 +215,13 @@ class AccountsAPITests(APITestCase):
             longitude="90.407599",
             location_name="Gulshan 1"
         )
+
+        # Overwrite created_at to guarantee distinct sequential timestamps
+        now = timezone.now()
+        Alert.objects.filter(pk=alert.pk).update(created_at=now - timezone.timedelta(minutes=40))
+        Event.objects.filter(pk=event.pk).update(created_at=now - timezone.timedelta(minutes=30))
+        Recommendation.objects.filter(pk=rec.pk).update(created_at=now - timezone.timedelta(minutes=20))
+        LookingFor.objects.filter(pk=lf.pk).update(created_at=now - timezone.timedelta(minutes=10))
 
         login_response = self.client.post(self.login_url, {
             "email": "existing@example.com",
@@ -226,14 +233,22 @@ class AccountsAPITests(APITestCase):
         response = self.client.get(self.my_items_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data['success'])
-        self.assertEqual(len(response.data['alerts']), 1)
-        self.assertEqual(response.data['alerts'][0]['title'], "My Test Alert")
-        self.assertEqual(len(response.data['events']), 1)
-        self.assertEqual(response.data['events'][0]['name'], "My Test Event")
-        self.assertEqual(len(response.data['recommendations']), 1)
-        self.assertEqual(response.data['recommendations'][0]['business_name'], "Good Burgers")
-        self.assertEqual(len(response.data['looking_for']), 1)
-        self.assertEqual(response.data['looking_for'][0]['business_name'], "Need a plumber")
+        self.assertEqual(len(response.data['items']), 4)
+
+        # Verify stack method (latest first)
+        # Sequence of creation: Alert -> Event -> Recommendation -> LookingFor
+        # Sorted order (latest first): LookingFor -> Recommendation -> Event -> Alert
+        self.assertEqual(response.data['items'][0]['type'], 'looking_for')
+        self.assertEqual(response.data['items'][0]['business_name'], "Need a plumber")
+
+        self.assertEqual(response.data['items'][1]['type'], 'recommendation')
+        self.assertEqual(response.data['items'][1]['business_name'], "Good Burgers")
+
+        self.assertEqual(response.data['items'][2]['type'], 'event')
+        self.assertEqual(response.data['items'][2]['name'], "My Test Event")
+
+        self.assertEqual(response.data['items'][3]['type'], 'alert')
+        self.assertEqual(response.data['items'][3]['title'], "My Test Alert")
 
     def test_get_profile_unauthenticated(self):
         response = self.client.get(self.profile_url)

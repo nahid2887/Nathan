@@ -240,7 +240,4 @@ class FriendRequestSerializer(serializers.ModelSerializer):
 
 class MyItemsResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
-    alerts = serializers.ListField(child=serializers.DictField())
-    events = serializers.ListField(child=serializers.DictField())
-    recommendations = serializers.ListField(child=serializers.DictField())
-    looking_for = serializers.ListField(child=serializers.DictField())
+    items = serializers.ListField(child=serializers.DictField())
