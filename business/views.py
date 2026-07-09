@@ -1,11 +1,17 @@
 from django.utils.decorators import method_decorator
 from rest_framework import viewsets, permissions, status
+from rest_framework.views import APIView
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from .models import Business
-from .serializers import BusinessSerializer, BusinessWriteSerializer
+from .models import Business, BusinessProfile
+from .serializers import (
+    BusinessSerializer, 
+    BusinessWriteSerializer, 
+    BusinessProfileSerializer, 
+    BusinessProfileWriteSerializer
+)
 from .permissions import HasActiveSubscription
 
 class IsCreatorOrReadOnly(permissions.BasePermission):
@@ -76,3 +82,111 @@ class BusinessViewSet(viewsets.ModelViewSet):
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+
+class BusinessProfileView(APIView):
+    """
+    API View for managing a user's single business profile.
+    Only accessible by active subscribers.
+    """
+    permission_classes = [permissions.IsAuthenticated, HasActiveSubscription]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    @swagger_auto_schema(
+        operation_summary="Retrieve own Business Profile",
+        operation_description="Get the business profile for the currently logged in subscriber.",
+        responses={200: BusinessProfileSerializer(), 404: "Not Found"},
+        tags=['Business Profile']
+    )
+    def get(self, request):
+        try:
+            profile = request.user.business_profile
+        except BusinessProfile.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Business profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = BusinessProfileSerializer(profile, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="Create own Business Profile",
+        operation_description="Create a unique business profile for the currently logged in subscriber.",
+        request_body=BusinessProfileWriteSerializer,
+        responses={201: BusinessProfileSerializer(), 400: "Bad Request"},
+        tags=['Business Profile']
+    )
+    def post(self, request):
+        if hasattr(request.user, 'business_profile'):
+            return Response(
+                {"success": False, "message": "A business profile already exists for this user."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = BusinessProfileWriteSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            profile = serializer.save()
+            return Response(BusinessProfileSerializer(profile, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_summary="Update own Business Profile",
+        operation_description="Update the business profile for the currently logged in subscriber.",
+        request_body=BusinessProfileWriteSerializer,
+        responses={200: BusinessProfileSerializer(), 404: "Not Found", 400: "Bad Request"},
+        tags=['Business Profile']
+    )
+    def put(self, request):
+        try:
+            profile = request.user.business_profile
+        except BusinessProfile.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Business profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = BusinessProfileWriteSerializer(profile, data=request.data, context={'request': request})
+        if serializer.is_valid():
+            profile = serializer.save()
+            return Response(BusinessProfileSerializer(profile, context={'request': request}).data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_summary="Partially Update own Business Profile",
+        operation_description="Partially update the business profile for the currently logged in subscriber.",
+        request_body=BusinessProfileWriteSerializer,
+        responses={200: BusinessProfileSerializer(), 404: "Not Found", 400: "Bad Request"},
+        tags=['Business Profile']
+    )
+    def patch(self, request):
+        try:
+            profile = request.user.business_profile
+        except BusinessProfile.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Business profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = BusinessProfileWriteSerializer(profile, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            profile = serializer.save()
+            return Response(BusinessProfileSerializer(profile, context={'request': request}).data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_summary="Delete own Business Profile",
+        operation_description="Delete the business profile for the currently logged in subscriber.",
+        responses={204: "No Content", 404: "Not Found"},
+        tags=['Business Profile']
+    )
+    def delete(self, request):
+        try:
+            profile = request.user.business_profile
+        except BusinessProfile.DoesNotExist:
+            return Response(
+                {"success": False, "message": "Business profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        profile.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+

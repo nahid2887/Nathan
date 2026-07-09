@@ -121,3 +121,117 @@ class BusinessAPITests(APITestCase):
         
         response = self.client.post(self.list_create_url, self.business_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class BusinessProfileAPITests(APITestCase):
+
+    def setUp(self):
+        self.profile_url = reverse('business-profile')
+        
+        # Create users
+        self.subscribed_user = User.objects.create_user(
+            username="subscribed@example.com",
+            email="subscribed@example.com",
+            password="testpassword123!",
+            is_subscribed=True,
+            subscription_expiry=timezone.now() + timedelta(days=30)
+        )
+        
+        self.unsubscribed_user = User.objects.create_user(
+            username="unsubscribed@example.com",
+            email="unsubscribed@example.com",
+            password="testpassword123!",
+            is_subscribed=False
+        )
+
+        self.expired_user = User.objects.create_user(
+            username="expired@example.com",
+            email="expired@example.com",
+            password="testpassword123!",
+            is_subscribed=True,
+            subscription_expiry=timezone.now() - timedelta(days=1)
+        )
+
+        self.profile_data = {
+            "name": "Bondi Kitchen & Living",
+            "category": "Retail",
+            "about": "Bondi Kitchen & Living is your premier destination for high-quality, sustainable home goods.",
+            "phone_number": "+61 2 9123 4567",
+            "website": "https://bondikitchenliving.com.au",
+            "service_area": "Bondi, Bronte, Tamarama",
+            "latitude": "-33.8915000000000000",
+            "longitude": "151.2767000000000000",
+            "location_name": "Bondi",
+            "business_hours": {
+                "Mon-Fri": "9:00 AM - 6:00 PM",
+                "Saturday": "10:00 AM - 5:00 PM",
+                "Sunday": "Closed"
+            }
+        }
+
+    def obtain_token(self, email):
+        login_url = reverse('login')
+        response = self.client.post(login_url, {
+            "email": email,
+            "password": "testpassword123!"
+        })
+        return response.data['access']
+
+    def test_subscribed_user_can_manage_profile(self):
+        token = self.obtain_token("subscribed@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        # 1. Retrieve profile before creation -> 404
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 2. Create profile -> 201
+        response = self.client.post(self.profile_url, self.profile_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['name'], "Bondi Kitchen & Living")
+        self.assertEqual(response.data['user']['email'], "subscribed@example.com")
+
+        # 3. Create profile again -> 400 (only single profile allowed)
+        response = self.client.post(self.profile_url, self.profile_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 4. Retrieve profile -> 200
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], "Bondi Kitchen & Living")
+
+        # 5. Update profile (PUT) -> 200
+        updated_data = self.profile_data.copy()
+        updated_data['name'] = "New Bondi Name"
+        response = self.client.put(self.profile_url, updated_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], "New Bondi Name")
+
+        # 6. Delete profile -> 204
+        response = self.client.delete(self.profile_url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # 7. Retrieve after deletion -> 404
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unsubscribed_user_cannot_access_profile(self):
+        token = self.obtain_token("unsubscribed@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        response = self.client.post(self.profile_url, self.profile_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_expired_user_cannot_access_profile(self):
+        token = self.obtain_token("expired@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        response = self.client.post(self.profile_url, self.profile_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
