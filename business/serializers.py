@@ -21,25 +21,19 @@ class BusinessRatingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BusinessRating
-        fields = ['id', 'user', 'rating', 'comment', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+        fields = ['id', 'user', 'rating', 'review', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
 
-    def validate(self, attrs):
-        request = self.context.get('request')
-        user = request.user
-        business = self.context.get('business')
-        
-        # Prevent the owner/creator of the business from rating it
-        if business.creator == user:
-            raise serializers.ValidationError("Business owners cannot rate or review their own business.")
-            
-        return attrs
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("Rating must be between 1 and 5.")
+        return value
 
 class BusinessSerializer(serializers.ModelSerializer):
     creator = BusinessCreatorSerializer(read_only=True)
     photos = BusinessPhotoSerializer(many=True, read_only=True)
-    average_rating = serializers.FloatField(read_only=True)
-    ratings_count = serializers.IntegerField(read_only=True)
+    average_rating = serializers.SerializerMethodField()
+    ratings_count = serializers.SerializerMethodField()
     distance_km = serializers.SerializerMethodField()
 
     class Meta:
@@ -55,6 +49,16 @@ class BusinessSerializer(serializers.ModelSerializer):
             'id', 'creator', 'photos', 'average_rating', 'ratings_count',
             'distance_km', 'created_at', 'updated_at'
         ]
+
+    def get_average_rating(self, obj):
+        ratings = obj.ratings.all()
+        if not ratings:
+            return 0.0
+        avg = sum(r.rating for r in ratings) / len(ratings)
+        return round(avg, 1)
+
+    def get_ratings_count(self, obj):
+        return obj.ratings.count()
 
     def get_distance_km(self, obj):
         request = self.context.get('request')

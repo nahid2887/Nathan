@@ -1,11 +1,11 @@
 from django.utils.decorators import method_decorator
 from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from rest_framework.decorators import action
-from .models import Business, BusinessRating
+from .models import Business
 from .serializers import BusinessSerializer, BusinessWriteSerializer, BusinessRatingSerializer
 from .permissions import HasActiveSubscription
 
@@ -80,33 +80,36 @@ class BusinessViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         method='post',
+        operation_summary="Rate a Business",
+        operation_description="Submit a rating (1-5) and an optional review for a business. The business owner/creator cannot rate their own business.",
         request_body=BusinessRatingSerializer,
-        responses={
-            201: BusinessRatingSerializer(),
-            400: "Validation Error (e.g. rating own business, invalid rating range)"
-        },
-        tags=['Business'],
-        operation_summary="Submit or update a rating for a business"
+        responses={201: BusinessRatingSerializer(), 400: "Bad Request"},
+        tags=['Business']
     )
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated, HasActiveSubscription])
     def rate(self, request, pk=None):
         business = self.get_object()
         
-        serializer = BusinessRatingSerializer(
-            data=request.data,
-            context={'request': request, 'business': business}
-        )
+        # Prevent the business owner/creator from rating their own business
+        if business.creator == request.user:
+            return Response(
+                {"detail": "You cannot rate or review your own business listing."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        serializer = BusinessRatingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        rating_val = serializer.validated_data.get('rating')
-        comment_val = serializer.validated_data.get('comment', '')
-        
+        from .models import BusinessRating
         rating_obj, created = BusinessRating.objects.update_or_create(
             business=business,
             user=request.user,
-            defaults={'rating': rating_val, 'comment': comment_val}
+            defaults={
+                'rating': serializer.validated_data['rating'],
+                'review': serializer.validated_data.get('review', '')
+            }
         )
         
-        response_serializer = BusinessRatingSerializer(rating_obj, context={'request': request})
+        response_serializer = BusinessRatingSerializer(rating_obj)
         status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(response_serializer.data, status=status_code)

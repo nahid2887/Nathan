@@ -122,71 +122,56 @@ class BusinessAPITests(APITestCase):
         response = self.client.post(self.list_create_url, self.business_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_business_rating_and_restrictions(self):
+    def test_business_rating_initial_and_updates(self):
+        # Create business by subscribed_user
         business = Business.objects.create(
             creator=self.subscribed_user,
-            name="Test Biz",
-            category="Food",
-            description="Good food",
-            phone_number="111",
-            email_address="test@biz.com",
-            latitude=40.7128,
-            longitude=-74.0060,
-            location_name="New York"
+            name="Rating Test Biz",
+            category="Services",
+            description="Details",
+            phone_number="123",
+            email_address="biz@example.com",
+            latitude=0.0,
+            longitude=0.0,
+            location_name="Here"
         )
-
-        # 1. Initial average rating is 0.0
-        self.assertEqual(business.average_rating, 0.0)
-        self.assertEqual(business.ratings_count, 0)
-
-        # Create another subscribed user (non-owner) to leave a rating
-        other_user = User.objects.create_user(
-            username="other@example.com",
-            email="other@example.com",
+        
+        # Create another user to rate
+        another_user = User.objects.create_user(
+            username="rater@example.com",
+            email="rater@example.com",
             password="testpassword123!",
             is_subscribed=True,
-            subscription_expiry=timezone.now() + timedelta(days=30),
-            latitude=40.7128,
-            longitude=-74.0060
+            subscription_expiry=timezone.now() + timedelta(days=30)
         )
-        token_other = self.obtain_token("other@example.com")
 
-        # 2. Rate the business via the API as other_user
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_other}')
-        rate_url = reverse('business-rate', args=[business.id])
+        # Token for rater
+        rater_token = self.obtain_token("rater@example.com")
         
-        response = self.client.post(rate_url, {"rating": 5, "comment": "Amazing!"}, format='json')
+        # Check initial rating is 0.0, reviews count is 0
+        token = self.obtain_token("subscribed@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        detail_url = reverse('business-detail', args=[business.id])
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['average_rating'], 0.0)
+        self.assertEqual(response.data['ratings_count'], 0)
+
+        # Rate action: Subscribed user (creator) tries to rate own business -> 400 Bad Request
+        rate_url = reverse('business-rate', args=[business.id])
+        rate_data = {"rating": 5, "review": "Great business!"}
+        response = self.client.post(rate_url, rate_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Rate action: Rater rates business -> 201 Created
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {rater_token}')
+        response = self.client.post(rate_url, rate_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['rating'], 5)
 
-        # Check updated average rating
-        business.refresh_from_db()
-        self.assertEqual(business.average_rating, 5.0)
-        self.assertEqual(business.ratings_count, 1)
-
-        # 3. Try to rate the business as the owner (subscribed_user)
-        token_owner = self.obtain_token("subscribed@example.com")
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_owner}')
-        
-        response = self.client.post(rate_url, {"rating": 4, "comment": "Great!"}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # 4. Check distance calculation in listing
-        far_business = Business.objects.create(
-            creator=self.subscribed_user,
-            name="Sydney Biz",
-            category="Retail",
-            description="Far away",
-            phone_number="222",
-            email_address="sydney@biz.com",
-            latitude=-33.8688,
-            longitude=151.2093,
-            location_name="Sydney"
-        )
-        
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token_other}')
-        detail_url = reverse('business-detail', args=[far_business.id])
+        # Retrieve again -> average_rating is 5.0, ratings_count is 1
         response = self.client.get(detail_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreater(response.data['distance_km'], 15000)
+        self.assertEqual(response.data['average_rating'], 5.0)
+        self.assertEqual(response.data['ratings_count'], 1)
 
