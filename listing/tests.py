@@ -251,3 +251,51 @@ class ListingAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['title'], "Close Item")
+
+    def test_authenticated_user_lists_own_listings_only(self):
+        # Create listing owned by user 1
+        listing_u1 = Listing.objects.create(
+            creator=self.user1,
+            title="User 1 Item",
+            category="Furniture",
+            status="free",
+            price="0.00",
+            condition="good",
+            latitude="23.780769",
+            longitude="90.407599",
+            location_name="Gulshan"
+        )
+        
+        # Create listing owned by user 2
+        listing_u2 = Listing.objects.create(
+            creator=self.user2,
+            title="User 2 Item",
+            category="Furniture",
+            status="free",
+            price="0.00",
+            condition="good",
+            latitude="23.780769",
+            longitude="90.407599",
+            location_name="Gulshan"
+        )
+
+        # GET request unauthenticated -> returns both items
+        self.client.credentials()
+        response = self.client.get(self.list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+
+        # GET request logged in as user 1 -> returns only user 1's items
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        response = self.client.get(self.list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], "User 1 Item")
+
+        # GET request logged in as user 2 -> returns only user 2's items
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token2}')
+        response = self.client.get(self.list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], "User 2 Item")
+

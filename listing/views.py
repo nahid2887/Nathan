@@ -20,7 +20,12 @@ class ListingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Listing.objects.none()
-        return Listing.objects.all().order_by('-created_at')
+        
+        queryset = Listing.objects.all().order_by('-created_at')
+        if self.action == 'list' and self.request.user and self.request.user.is_authenticated:
+            queryset = queryset.filter(creator=self.request.user)
+            
+        return queryset
 
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
