@@ -1,27 +1,27 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Business, BusinessPhoto
+from .models import ProductAd, ProductAdPhoto
 
 User = get_user_model()
 
-class BusinessCreatorSerializer(serializers.ModelSerializer):
+class ProductAdCreatorSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='first_name', read_only=True)
 
     class Meta:
         model = User
         fields = ['id', 'full_name', 'email', 'profile_photo']
 
-class BusinessPhotoSerializer(serializers.ModelSerializer):
+class ProductAdPhotoSerializer(serializers.ModelSerializer):
     class Meta:
-        model = BusinessPhoto
+        model = ProductAdPhoto
         fields = ['id', 'image']
 
-class BusinessSerializer(serializers.ModelSerializer):
-    creator = BusinessCreatorSerializer(read_only=True)
-    photos = BusinessPhotoSerializer(many=True, read_only=True)
+class ProductAdSerializer(serializers.ModelSerializer):
+    creator = ProductAdCreatorSerializer(read_only=True)
+    photos = ProductAdPhotoSerializer(many=True, read_only=True)
 
     class Meta:
-        model = Business
+        model = ProductAd
         fields = [
             'id', 'creator', 'name', 'category', 'description', 
             'phone_number', 'email_address', 'website', 
@@ -30,7 +30,7 @@ class BusinessSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at']
 
-class BusinessWriteSerializer(serializers.ModelSerializer):
+class ProductAdWriteSerializer(serializers.ModelSerializer):
     photos = serializers.ListField(
         child=serializers.ImageField(max_length=1000000, allow_empty_file=False, use_url=False),
         required=False,
@@ -38,7 +38,7 @@ class BusinessWriteSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = Business
+        model = ProductAd
         fields = [
             'name', 'category', 'description', 'phone_number', 'email_address',
             'website', 'latitude', 'longitude', 'location_name', 'business_hours', 'photos'
@@ -46,18 +46,18 @@ class BusinessWriteSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         photos_data = validated_data.pop('photos', [])
-        business = Business.objects.create(**validated_data)
+        product_ad = ProductAd.objects.create(**validated_data)
         
         request = self.context.get('request')
         if request and request.FILES:
             files = request.FILES.getlist('photos')
             for file in files:
-                BusinessPhoto.objects.create(business=business, image=file)
+                ProductAdPhoto.objects.create(product_ad=product_ad, image=file)
         else:
             for photo in photos_data:
-                BusinessPhoto.objects.create(business=business, image=photo)
+                ProductAdPhoto.objects.create(product_ad=product_ad, image=photo)
                 
-        return business
+        return product_ad
 
     def update(self, instance, validated_data):
         photos_data = validated_data.pop('photos', None)
@@ -73,12 +73,12 @@ class BusinessWriteSerializer(serializers.ModelSerializer):
             files = request.FILES.getlist('photos') if request else []
             if files:
                 for file in files:
-                    BusinessPhoto.objects.create(business=instance, image=file)
+                    ProductAdPhoto.objects.create(product_ad=instance, image=file)
             elif photos_data:
                 for photo in photos_data:
-                    BusinessPhoto.objects.create(business=instance, image=photo)
+                    ProductAdPhoto.objects.create(product_ad=instance, image=photo)
                     
         return instance
 
     def to_representation(self, instance):
-        return BusinessSerializer(instance, context=self.context).data
+        return ProductAdSerializer(instance, context=self.context).data

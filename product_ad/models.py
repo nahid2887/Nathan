@@ -1,11 +1,11 @@
 from django.db import models
 from django.conf import settings
 
-class Business(models.Model):
+class ProductAd(models.Model):
     creator = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
-        related_name='businesses'
+        related_name='product_ads'
     )
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=255)
@@ -27,14 +27,14 @@ class Business(models.Model):
         return f"{self.name} ({self.category})"
 
 
-class BusinessPhoto(models.Model):
-    business = models.ForeignKey(
-        Business, 
+class ProductAdPhoto(models.Model):
+    product_ad = models.ForeignKey(
+        ProductAd, 
         on_delete=models.CASCADE, 
         related_name='photos'
     )
-    image = models.ImageField(upload_to='business_photos/')
+    image = models.ImageField(upload_to='product_ad_photos/')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Photo for Business ID {self.business.id}"
+        return f"Photo for ProductAd ID {self.product_ad.id}"
