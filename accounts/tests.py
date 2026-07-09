@@ -695,4 +695,157 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(response_friends_u.data['count'], 0)
         self.assertEqual(len(response_friends_u.data['friends']), 0)
 
+    def test_create_checkout_session_success(self):
+        from unittest.mock import patch
+        from custom_admin.models import SubscriptionPlan
+        
+        plan = SubscriptionPlan.objects.create(
+            name="Community Premium",
+            price="10.00",
+            billing_cycle="monthly",
+            discount_offer=10
+        )
+
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        with patch('stripe.checkout.Session.create') as mock_create:
+            class MockSession:
+                id = 'cs_test_123'
+                url = 'https://checkout.stripe.com/pay/cs_test_123'
+            mock_create.return_value = MockSession()
+
+            response = self.client.post(self.plans_url, {"plan_id": plan.id})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertTrue(response.data['success'])
+            self.assertEqual(response.data['session_id'], 'cs_test_123')
+            self.assertEqual(response.data['checkout_url'], 'https://checkout.stripe.com/pay/cs_test_123')
+
+    def test_verify_checkout_session_success(self):
+        from unittest.mock import patch
+        from custom_admin.models import SubscriptionPlan
+        from accounts.models import User
+        from django.utils import timezone
+        
+        plan = SubscriptionPlan.objects.create(
+            name="Community Premium",
+            price="10.00",
+            billing_cycle="monthly",
+            discount_offer=10
+        )
+
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        with patch('stripe.checkout.Session.retrieve') as mock_retrieve:
+            class MockSession:
+                id = 'cs_test_123'
+                payment_status = 'paid'
+                metadata = {
+                    'user_id': self.user.id,
+                    'plan_id': plan.id
+                }
+            mock_retrieve.return_value = MockSession()
+
+            verify_url = reverse('plans_verify')
+            response = self.client.get(f"{verify_url}?session_id=cs_test_123")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertTrue(response.data['success'])
+            
+            # Check user subscription status updated
+            updated_user = User.objects.get(id=self.user.id)
+            self.assertTrue(updated_user.is_subscribed)
+            self.assertIsNotNone(updated_user.subscription_expiry)
+            self.assertEqual(updated_user.current_plan, plan)
+
+    from django.test import override_settings
+
+    @override_settings(STRIPE_WEBHOOK_SECRET='whsec_test_secret')
+    def test_webhook_payment_success(self):
+        from custom_admin.models import SubscriptionPlan
+        from accounts.models import User
+        
+        plan = SubscriptionPlan.objects.create(
+            name="Community Premium",
+            price="10.00",
+            billing_cycle="monthly",
+            discount_offer=10
+        )
+
+        webhook_url = reverse('stripe_webhook')
+        payload = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_test_123",
+                    "payment_status": "paid",
+                    "metadata": {
+                        "user_id": self.user.id,
+                        "plan_id": plan.id
+                    }
+                }
+            }
+        }
+
+        # Clear credentials for webhook (it's unauthenticated)
+        self.client.credentials()
+        response = self.client.post(webhook_url, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check user subscription status updated
+        updated_user = User.objects.get(id=self.user.id)
+        self.assertTrue(updated_user.is_subscribed)
+        self.assertIsNotNone(updated_user.subscription_expiry)
+        self.assertEqual(updated_user.current_plan, plan)
+
+    def test_get_my_subscription_details(self):
+        from custom_admin.models import SubscriptionPlan
+        from django.utils import timezone
+        from datetime import timedelta
+
+        plan = SubscriptionPlan.objects.create(
+            name="Community Premium",
+            price="10.00",
+            billing_cycle="monthly",
+            discount_offer=10
+        )
+
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        my_sub_url = reverse('my_subscription')
+        
+        # Initially not subscribed
+        response = self.client.get(my_sub_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertFalse(response.data['is_subscribed'])
+        self.assertIsNone(response.data['current_plan'])
+
+        # Update user to be subscribed
+        self.user.is_subscribed = True
+        self.user.subscription_expiry = timezone.now() + timedelta(days=30)
+        self.user.current_plan = plan
+        self.user.save()
+
+        response = self.client.get(my_sub_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertTrue(response.data['is_subscribed'])
+        self.assertEqual(response.data['current_plan']['name'], "Community Premium")
+
+
+
 

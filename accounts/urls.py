@@ -16,6 +16,9 @@ from .views import (
     RemoveFriendView,
     PlanListView,
     MyItemsView,
+    PlanVerifyView,
+    StripeWebhookView,
+    MySubscriptionView,
 )
 
 from rest_framework_simplejwt.views import (
@@ -112,6 +115,21 @@ urlpatterns = [
         'plans/',
         PlanListView.as_view(),
         name='plans_list'
+    ),
+    path(
+        'plans/my-subscription/',
+        MySubscriptionView.as_view(),
+        name='my_subscription'
+    ),
+    path(
+        'plans/verify/',
+        PlanVerifyView.as_view(),
+        name='plans_verify'
+    ),
+    path(
+        'payment/stripe/webhook/',
+        StripeWebhookView.as_view(),
+        name='stripe_webhook'
     ),
     path(
         'my-items/',

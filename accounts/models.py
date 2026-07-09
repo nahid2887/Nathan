@@ -14,6 +14,17 @@ class User(AbstractUser):
     notify_events = models.BooleanField(default=True)
     notify_recommendations = models.BooleanField(default=True)
     notify_looking_for = models.BooleanField(default=True)
+    is_subscribed = models.BooleanField(default=False)
+    subscription_expiry = models.DateTimeField(null=True, blank=True)
+    current_plan = models.ForeignKey('custom_admin.SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True)
+
+    def check_subscription(self):
+        from django.utils import timezone
+        if self.is_subscribed and self.subscription_expiry and self.subscription_expiry < timezone.now():
+            self.is_subscribed = False
+            self.save(update_fields=['is_subscribed'])
+        return self.is_subscribed
+
 
 
 class OTP(models.Model):

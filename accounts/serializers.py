@@ -64,6 +64,8 @@ class UserResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     full_name = serializers.CharField()
     email = serializers.EmailField()
+    is_subscribed = serializers.BooleanField(required=False)
+    subscription_expiry = serializers.DateTimeField(required=False)
 
 
 class RegisterSuccessResponseSerializer(serializers.Serializer):
@@ -110,6 +112,8 @@ class LoginUserSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     full_name = serializers.CharField()
     email = serializers.EmailField()
+    is_subscribed = serializers.BooleanField(required=False)
+    subscription_expiry = serializers.DateTimeField(required=False)
 
 
 class LoginSuccessResponseSerializer(serializers.Serializer):
@@ -135,9 +139,10 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'full_name', 'email', 'profile_photo', 'latitude', 'longitude', 
             'distance_radius', 'about_me', 'location_name', 'notify_events', 
-            'notify_recommendations', 'notify_looking_for'
+            'notify_recommendations', 'notify_looking_for',
+            'is_subscribed', 'subscription_expiry'
         ]
-        read_only_fields = ['id', 'email']
+        read_only_fields = ['id', 'email', 'is_subscribed', 'subscription_expiry']
 
 
 class ProfileResponseSerializer(serializers.Serializer):

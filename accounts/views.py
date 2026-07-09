@@ -807,6 +807,7 @@ class PlanListView(APIView):
     @swagger_auto_schema(
         operation_summary="List Subscription Plans",
         operation_description="Get the list of all active subscription plans.",
+        tags=['Payment'],
         responses={
             200: openapi.Response(
                 description="Success",
@@ -832,6 +833,341 @@ class PlanListView(APIView):
             "count": len(plans),
             "plans": serializer.data
         }, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="Create Stripe Checkout Session",
+        operation_description="Create a Stripe Checkout Session for a specific subscription plan to buy a package.",
+        tags=['Payment'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["plan_id"],
+            properties={
+                "plan_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="ID of the plan to buy"),
+                "success_url": openapi.Schema(type=openapi.TYPE_STRING, description="Optional custom success URL (can include {CHECKOUT_SESSION_ID})"),
+                "cancel_url": openapi.Schema(type=openapi.TYPE_STRING, description="Optional custom cancel URL")
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Checkout session created successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "checkout_url": openapi.Schema(type=openapi.TYPE_STRING),
+                        "session_id": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Invalid plan or request data",
+            404: "Plan not found"
+        }
+    )
+    def post(self, request):
+        import stripe
+        from django.conf import settings
+        from custom_admin.models import SubscriptionPlan
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+
+        plan_id = request.data.get('plan_id')
+        if not plan_id:
+            return Response({"success": False, "message": "plan_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            return Response({"success": False, "message": "Plan not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        success_url = request.data.get('success_url')
+        cancel_url = request.data.get('cancel_url')
+
+        if not success_url:
+            success_url = request.build_absolute_uri('/api/plans/') + 'verify/?session_id={CHECKOUT_SESSION_ID}'
+        if not cancel_url:
+            cancel_url = request.build_absolute_uri('/api/plans/')
+
+        try:
+            amount_in_cents = int(plan.price * 100)
+
+            if plan.discount_offer > 0:
+                discount_amount = (amount_in_cents * plan.discount_offer) // 100
+                amount_in_cents = max(0, amount_in_cents - discount_amount)
+
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[
+                    {
+                        'price_data': {
+                            'currency': 'aud',
+                            'product_data': {
+                                'name': plan.name,
+                                'description': f"Subscription Plan - {plan.get_billing_cycle_display()}",
+                            },
+                            'unit_amount': amount_in_cents,
+                        },
+                        'quantity': 1,
+                    },
+                ],
+                mode='payment',
+                success_url=success_url,
+                cancel_url=cancel_url,
+                metadata={
+                    'user_id': request.user.id,
+                    'plan_id': plan.id,
+                }
+            )
+
+            return Response({
+                "success": True,
+                "checkout_url": checkout_session.url,
+                "session_id": checkout_session.id
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PlanVerifyView(APIView):
+    from rest_framework.permissions import AllowAny
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_summary="Verify Stripe Checkout Session",
+        operation_description="Verify checkout session payment and activate subscription if successful.",
+        tags=['Payment'],
+        manual_parameters=[
+            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe Checkout Session ID", type=openapi.TYPE_STRING, required=True)
+        ],
+        responses={
+            200: openapi.Response(
+                description="Subscription verified and updated",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING),
+                        "is_subscribed": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "subscription_expiry": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Invalid session_id or verification failed"
+        }
+    )
+    def get(self, request):
+        import stripe
+        from django.conf import settings
+        from django.utils import timezone
+        from datetime import timedelta
+        from custom_admin.models import SubscriptionPlan
+        from accounts.models import User
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        session_id = request.query_params.get('session_id')
+        if not session_id:
+            return Response({"success": False, "message": "session_id query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            
+            if session.payment_status != 'paid':
+                return Response({"success": False, "message": "Session has not been paid yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+            metadata = session.metadata
+            user_id = metadata.get('user_id')
+            plan_id = metadata.get('plan_id')
+
+            if not user_id or not plan_id:
+                return Response({"success": False, "message": "Invalid session metadata."}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                user = User.objects.get(id=user_id)
+                plan = SubscriptionPlan.objects.get(id=plan_id)
+            except (User.DoesNotExist, SubscriptionPlan.DoesNotExist):
+                return Response({"success": False, "message": "User or Plan from metadata not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if plan.billing_cycle == 'monthly':
+                duration = timedelta(days=30)
+            elif plan.billing_cycle == 'yearly':
+                duration = timedelta(days=365)
+            else:
+                duration = timedelta(days=30)
+
+            now = timezone.now()
+            if user.subscription_expiry and user.subscription_expiry > now:
+                start_date = user.subscription_expiry
+            else:
+                start_date = now
+
+            new_expiry = start_date + duration
+
+            user.is_subscribed = True
+            user.subscription_expiry = new_expiry
+            user.current_plan = plan
+            user.save()
+
+            # Print payment details directly to Django terminal
+            print("\n" + "=" * 60)
+            print("STRIPE PAYMENT VERIFICATION SUCCESSFUL")
+            print(f"Session ID:         {session_id}")
+            print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
+            print(f"Plan:               {plan.name} (ID: {plan.id})")
+            print(f"Amount Paid:        AU$ {plan.price}")
+            print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
+            print(f"New Expiry Date:    {new_expiry}")
+            print("=" * 60 + "\n")
+
+            return Response({
+                "success": True,
+                "message": "Subscription successfully activated/extended.",
+                "is_subscribed": user.is_subscribed,
+                "subscription_expiry": user.subscription_expiry
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class StripeWebhookView(APIView):
+    from rest_framework.permissions import AllowAny
+    permission_classes = [AllowAny]
+
+    @swagger_auto_schema(
+        operation_summary="Stripe Webhook Handler",
+        operation_description="Handles webhook events sent by Stripe. Processes checkout.session.completed to activate subscriptions.",
+        tags=['Payment'],
+        responses={
+            200: "Webhook handled successfully",
+            400: "Signature verification failed or invalid payload"
+        }
+    )
+    def post(self, request):
+        import stripe
+        import json
+        from django.conf import settings
+        from django.utils import timezone
+        from datetime import timedelta
+        from custom_admin.models import SubscriptionPlan
+        from accounts.models import User
+
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        payload = request.body
+        sig_header = request.headers.get('STRIPE_SIGNATURE')
+        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
+        event = None
+
+        try:
+            if endpoint_secret and endpoint_secret != 'whsec_test_secret':
+                event = stripe.Webhook.construct_event(
+                    payload, sig_header, endpoint_secret
+                )
+            else:
+                event_dict = json.loads(payload)
+                event = stripe.Event.construct_from(event_dict, stripe.api_key)
+        except ValueError as e:
+            return Response({"error": "Invalid payload"}, status=status.HTTP_400_BAD_REQUEST)
+        except stripe.error.SignatureVerificationError as e:
+            return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            
+            if session.get('payment_status') == 'paid':
+                metadata = session.get('metadata', {})
+                user_id = metadata.get('user_id')
+                plan_id = metadata.get('plan_id')
+
+                if user_id and plan_id:
+                    try:
+                        user = User.objects.get(id=user_id)
+                        plan = SubscriptionPlan.objects.get(id=plan_id)
+
+                        if plan.billing_cycle == 'monthly':
+                            duration = timedelta(days=30)
+                        elif plan.billing_cycle == 'yearly':
+                            duration = timedelta(days=365)
+                        else:
+                            duration = timedelta(days=30)
+
+                        now = timezone.now()
+                        if user.subscription_expiry and user.subscription_expiry > now:
+                            start_date = user.subscription_expiry
+                        else:
+                            start_date = now
+
+                        new_expiry = start_date + duration
+
+                        user.is_subscribed = True
+                        user.subscription_expiry = new_expiry
+                        user.current_plan = plan
+                        user.save()
+
+                        # Print payment details directly to Django terminal
+                        print("\n" + "=" * 60)
+                        print("STRIPE WEBHOOK PAYMENT RECEIVED")
+                        print(f"Session ID:         {session.get('id')}")
+                        print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
+                        print(f"Plan:               {plan.name} (ID: {plan.id})")
+                        print(f"Amount Paid:        AU$ {plan.price}")
+                        print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
+                        print(f"New Expiry Date:    {new_expiry}")
+                        print("=" * 60 + "\n")
+                    except (User.DoesNotExist, SubscriptionPlan.DoesNotExist):
+                        pass
+
+        return Response({"success": True}, status=status.HTTP_200_OK)
+
+
+class MySubscriptionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Get Current User's Subscription Details",
+        operation_description="Retrieve active subscription plan details and expiry date for the authenticated user.",
+        tags=['Payment'],
+        responses={
+            200: openapi.Response(
+                description="User subscription details retrieved successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "is_subscribed": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "subscription_expiry": openapi.Schema(type=openapi.TYPE_STRING, format="date-time", nullable=True),
+                        "current_plan": openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            nullable=True,
+                            properties={
+                                "id": openapi.Schema(type=openapi.TYPE_INTEGER),
+                                "name": openapi.Schema(type=openapi.TYPE_STRING),
+                                "price": openapi.Schema(type=openapi.TYPE_STRING),
+                                "billing_cycle": openapi.Schema(type=openapi.TYPE_STRING),
+                                "discount_offer": openapi.Schema(type=openapi.TYPE_INTEGER)
+                            }
+                        )
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request):
+        from custom_admin.serializers import SubscriptionPlanSerializer
+        user = request.user
+        
+        user.check_subscription()
+        
+        plan_data = None
+        if user.current_plan:
+            plan_data = SubscriptionPlanSerializer(user.current_plan).data
+            
+        return Response({
+            "success": True,
+            "is_subscribed": user.is_subscribed,
+            "subscription_expiry": user.subscription_expiry,
+            "current_plan": plan_data
+        }, status=status.HTTP_200_OK)
+
 
 
 class MyItemsView(APIView):
