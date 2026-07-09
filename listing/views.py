@@ -14,7 +14,7 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
 
 class ListingViewSet(viewsets.ModelViewSet):
     queryset = Listing.objects.all()
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsCreatorOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsCreatorOrReadOnly]
     parser_classes = [parsers.JSONParser, parsers.MultiPartParser, parsers.FormParser]
 
     def get_queryset(self):

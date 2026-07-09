@@ -109,7 +109,12 @@ class ListingAPITests(APITestCase):
             location_name="Gulshan, Dhaka"
         )
         
-        # Public listing retrieval (unauthenticated)
+        # Public listing retrieval (unauthenticated) -> should now be HTTP_401_UNAUTHORIZED
+        response = self.client.get(self.list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Authenticated listing retrieval
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
         response = self.client.get(self.list_create_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
@@ -279,11 +284,10 @@ class ListingAPITests(APITestCase):
             location_name="Gulshan"
         )
 
-        # GET request unauthenticated -> returns both items
+        # GET request unauthenticated -> should now be HTTP_401_UNAUTHORIZED
         self.client.credentials()
         response = self.client.get(self.list_create_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
         # GET request logged in as user 1 -> returns only user 1's items
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
