@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Business, BusinessPhoto
+from .models import Business, BusinessPhoto, BusinessRating
 
 User = get_user_model()
 
@@ -16,9 +16,31 @@ class BusinessPhotoSerializer(serializers.ModelSerializer):
         model = BusinessPhoto
         fields = ['id', 'image']
 
+class BusinessRatingSerializer(serializers.ModelSerializer):
+    user = BusinessCreatorSerializer(read_only=True)
+
+    class Meta:
+        model = BusinessRating
+        fields = ['id', 'user', 'rating', 'comment', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user
+        business = self.context.get('business')
+        
+        # Prevent the owner/creator of the business from rating it
+        if business.creator == user:
+            raise serializers.ValidationError("Business owners cannot rate or review their own business.")
+            
+        return attrs
+
 class BusinessSerializer(serializers.ModelSerializer):
     creator = BusinessCreatorSerializer(read_only=True)
     photos = BusinessPhotoSerializer(many=True, read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    ratings_count = serializers.IntegerField(read_only=True)
+    distance_km = serializers.SerializerMethodField()
 
     class Meta:
         model = Business
@@ -26,9 +48,24 @@ class BusinessSerializer(serializers.ModelSerializer):
             'id', 'creator', 'name', 'category', 'description', 
             'phone_number', 'email_address', 'website', 
             'latitude', 'longitude', 'location_name', 
-            'business_hours', 'photos', 'created_at', 'updated_at'
+            'business_hours', 'photos', 'average_rating', 'ratings_count',
+            'distance_km', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'creator', 'photos', 'average_rating', 'ratings_count',
+            'distance_km', 'created_at', 'updated_at'
+        ]
+
+    def get_distance_km(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            user = request.user
+            if user.latitude is not None and user.longitude is not None:
+                if obj.latitude is not None and obj.longitude is not None:
+                    from events.views import haversine_distance
+                    dist = haversine_distance(user.latitude, user.longitude, obj.latitude, obj.longitude)
+                    return round(dist, 2)
+        return None
 
 class BusinessWriteSerializer(serializers.ModelSerializer):
     photos = serializers.ListField(

@@ -23,6 +23,18 @@ class Business(models.Model):
     class Meta:
         ordering = ['-created_at']
 
+    @property
+    def average_rating(self):
+        ratings = self.ratings.all()
+        if not ratings:
+            return 0.0
+        total = sum(r.rating for r in ratings)
+        return round(total / len(ratings), 1)
+
+    @property
+    def ratings_count(self):
+        return self.ratings.count()
+
     def __str__(self):
         return f"{self.name} ({self.category})"
 
@@ -38,3 +50,32 @@ class BusinessPhoto(models.Model):
 
     def __str__(self):
         return f"Photo for Business ID {self.business.id}"
+
+
+from django.core.validators import MinValueValidator, MaxValueValidator
+
+class BusinessRating(models.Model):
+    business = models.ForeignKey(
+        Business,
+        on_delete=models.CASCADE,
+        related_name='ratings'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='business_ratings'
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)]
+    )
+    comment = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['business', 'user'], name='unique_business_rating')
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} rated {self.business.name} - {self.rating} stars"
