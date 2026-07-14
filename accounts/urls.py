@@ -3,7 +3,9 @@ from .views import (
     RegisterView,
     ChangePasswordView,
     LoginView,
+    GoogleLoginView,
     ProfileView,
+
     ForgotPasswordView,
     VerifyOTPView,
     ResetPasswordView,
@@ -37,6 +39,13 @@ urlpatterns = [
         LoginView.as_view(),
         name='login'
     ),
+
+    path(
+        'google-login/',
+        GoogleLoginView.as_view(),
+        name='google_login'
+    ),
+
 
     path(
         'refresh/',

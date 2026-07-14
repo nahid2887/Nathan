@@ -15,3 +15,5 @@ requests==2.32.5
 whitenoise==6.9.0
 agora_token_builder==1.0.0
 stripe==11.2.0
+firebase-admin
+

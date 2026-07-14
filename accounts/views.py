@@ -2,6 +2,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+from django.utils.crypto import get_random_string
+
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 import random
@@ -29,7 +32,12 @@ from .serializers import (
     FriendUserSerializer,
     FriendRequestSerializer,
     MyItemsResponseSerializer,
+    GoogleLoginSerializer,
 )
+from .firebase_auth import verify_firebase_token
+import requests
+from django.core.files.base import ContentFile
+
 
 
 class RegisterView(APIView):
@@ -117,6 +125,99 @@ class LoginView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+
+class GoogleLoginView(APIView):
+
+    @swagger_auto_schema(
+        operation_summary="Google / Firebase Login",
+        operation_description="Authenticate user via Google ID Token from Firebase.",
+        request_body=GoogleLoginSerializer,
+        responses={
+            200: LoginSuccessResponseSerializer,
+            201: LoginSuccessResponseSerializer,
+            400: LoginErrorResponseSerializer,
+        }
+    )
+    def post(self, request):
+        serializer = GoogleLoginSerializer(data=request.data)
+
+        if not serializer.is_valid():
+            return Response(
+                {
+                    "success": False,
+                    "errors": serializer.errors
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        id_token = serializer.validated_data["id_token"]
+
+        try:
+            decoded_token = verify_firebase_token(id_token)
+        except ValidationError as e:
+            return Response(
+                {
+                    "success": False,
+                    "errors": {"id_token": e.detail}
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        email = decoded_token.get("email")
+        name = decoded_token.get("name", "")
+        picture_url = decoded_token.get("picture", "")
+
+        if not email:
+            return Response(
+                {
+                    "success": False,
+                    "errors": {"id_token": ["Email address is required in the Google token."]}
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.filter(email=email).first()
+        created = False
+
+        if not user:
+            # Register new user
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=get_random_string(32),
+                first_name=name
+            )
+            created = True
+
+            # Download profile picture
+            if picture_url:
+                try:
+                    response = requests.get(picture_url, timeout=10)
+                    if response.status_code == 200:
+                        filename = f"google_profile_{user.id}.jpg"
+                        user.profile_photo.save(filename, ContentFile(response.content), save=True)
+                except Exception:
+                    pass
+
+        refresh = RefreshToken.for_user(user)
+
+        return Response(
+            {
+                "success": True,
+                "message": "Registration and login successful." if created else "Login successful.",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "id": user.id,
+                    "full_name": user.first_name,
+                    "email": user.email,
+                },
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
 
 
 

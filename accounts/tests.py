@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework import status
+from unittest.mock import patch
 
 User = get_user_model()
 
@@ -11,6 +12,7 @@ class AccountsAPITests(APITestCase):
     def setUp(self):
         self.register_url = reverse('register')
         self.login_url = reverse('login')
+        self.google_login_url = reverse('google_login')
         self.change_password_url = reverse('change_password')
         self.profile_url = reverse('profile')
         self.forgot_password_url = reverse('forgot_password')
@@ -32,7 +34,46 @@ class AccountsAPITests(APITestCase):
             first_name="Existing User"
         )
 
+    @patch('accounts.views.verify_firebase_token')
+    def test_google_login_new_user_success(self, mock_verify):
+        mock_verify.return_value = {
+            "email": "new_google_user@example.com",
+            "name": "New Google User",
+            "picture": "http://example.com/avatar.jpg"
+        }
+        response = self.client.post(self.google_login_url, {"id_token": "valid_token_123"})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['user']['email'], "new_google_user@example.com")
+        self.assertEqual(response.data['user']['full_name'], "New Google User")
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+        self.assertTrue(User.objects.filter(email="new_google_user@example.com").exists())
+
+    @patch('accounts.views.verify_firebase_token')
+    def test_google_login_existing_user_success(self, mock_verify):
+        mock_verify.return_value = {
+            "email": "existing@example.com",
+            "name": "Existing User updated",
+            "picture": ""
+        }
+        response = self.client.post(self.google_login_url, {"id_token": "valid_token_123"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['user']['email'], "existing@example.com")
+        self.assertIn('access', response.data)
+
+    @patch('accounts.views.verify_firebase_token')
+    def test_google_login_invalid_token(self, mock_verify):
+        from rest_framework.exceptions import ValidationError
+        mock_verify.side_effect = ValidationError("Invalid Firebase ID token.")
+        response = self.client.post(self.google_login_url, {"id_token": "invalid_token_123"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+        self.assertIn('id_token', response.data['errors'])
+
     def test_register_user_success(self):
+
         response = self.client.post(self.register_url, self.user_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(response.data['success'])

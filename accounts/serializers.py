@@ -245,4 +245,9 @@ class FriendRequestSerializer(serializers.ModelSerializer):
 
 class MyItemsResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
-    items = serializers.ListField(child=serializers.DictField())
+    items = serializers.ListField(child=serializers.DictField())
+
+
+class GoogleLoginSerializer(serializers.Serializer):
+    id_token = serializers.CharField(required=True)
+
