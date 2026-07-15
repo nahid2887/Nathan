@@ -17,6 +17,7 @@ class User(AbstractUser):
     is_subscribed = models.BooleanField(default=False)
     subscription_expiry = models.DateTimeField(null=True, blank=True)
     current_plan = models.ForeignKey('custom_admin.SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True)
+    fcm_token = models.TextField(null=True, blank=True)
 
     def check_subscription(self):
         from django.utils import timezone

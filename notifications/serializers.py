@@ -7,6 +7,11 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'notification_type', 'title', 'message', 
             'is_read', 'event', 'recommendation', 'looking_for', 
-            'created_at'
+            'alert', 'created_at'
         ]
         read_only_fields = fields
+
+
+class RegisterFCMTokenSerializer(serializers.Serializer):
+    fcm_token = serializers.CharField(required=True, allow_blank=True)
+

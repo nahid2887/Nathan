@@ -4,7 +4,8 @@ from rest_framework import status, permissions
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import Notification
-from .serializers import NotificationSerializer
+from .serializers import NotificationSerializer, RegisterFCMTokenSerializer
+
 
 class NotificationListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -136,3 +137,45 @@ class MarkAllNotificationsReadView(APIView):
             "message": "All notifications marked as read.",
             "unread_count": 0
         }, status=status.HTTP_200_OK)
+
+
+class RegisterFCMTokenView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Register FCM Device Token",
+        operation_description="Save the Firebase Cloud Messaging device token for the authenticated user.",
+        tags=['Notifications'],
+        request_body=RegisterFCMTokenSerializer,
+        responses={
+            200: openapi.Response(
+                description="Token registered successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING)
+                    }
+                )
+            ),
+            400: "Invalid payload"
+        }
+    )
+    def post(self, request):
+        serializer = RegisterFCMTokenSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                "success": False,
+                "errors": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        fcm_token = serializer.validated_data["fcm_token"]
+        user = request.user
+        user.fcm_token = fcm_token
+        user.save(update_fields=['fcm_token'])
+
+        return Response({
+            "success": True,
+            "message": "FCM device token registered successfully."
+        }, status=status.HTTP_200_OK)
+

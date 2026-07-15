@@ -6,6 +6,7 @@ class Notification(models.Model):
         ('event', 'Event'),
         ('recommendation', 'Recommendation'),
         ('looking_for', 'Looking For'),
+        ('alert', 'Alert'),
     )
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
     notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
@@ -16,6 +17,8 @@ class Notification(models.Model):
     event = models.ForeignKey('events.Event', on_delete=models.CASCADE, null=True, blank=True)
     recommendation = models.ForeignKey('recommendations.Recommendation', on_delete=models.CASCADE, null=True, blank=True)
     looking_for = models.ForeignKey('looking_for.LookingFor', on_delete=models.CASCADE, null=True, blank=True)
+    alert = models.ForeignKey('alert.Alert', on_delete=models.CASCADE, null=True, blank=True)
+
     
     created_at = models.DateTimeField(auto_now_add=True)
 

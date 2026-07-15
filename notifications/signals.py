@@ -5,118 +5,206 @@ from django.db.models import Q
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from events.models import Event
-from recommendations.models import Recommendation
-from looking_for.models import LookingFor
+from looking_for.models import LookingForLike, LookingForComment
+from recommendations.models import RecommendationLike, RecommendationComment
+from alert.models import Alert
 from accounts.models import Friendship
 from events.views import haversine_distance
 from .models import Notification
 from .serializers import NotificationSerializer
+from .push import send_push_notification
 
 User = get_user_model()
 channel_layer = get_channel_layer()
 
-def notify_matching_users(post, post_type):
-    creator = post.creator
-    
-    # 1. Fetch friend IDs of the creator
-    friendships = Friendship.objects.filter(
-        Q(status='accepted') & (Q(sender=creator) | Q(receiver=creator))
+def create_and_send_notification(user, notification_type, title, message, event=None, recommendation=None, looking_for=None, alert=None):
+    notification = Notification.objects.create(
+        user=user,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        event=event,
+        recommendation=recommendation,
+        looking_for=looking_for,
+        alert=alert
     )
-    friend_ids = set()
-    for f in friendships:
-        if f.sender == creator:
-            friend_ids.add(f.receiver_id)
-        else:
-            friend_ids.add(f.sender_id)
-
-    # 2. Get list of users to potentially notify based on their notification preferences
-    filter_kwargs = {
-        'is_active': True,
-    }
-    if post_type == 'event':
-        filter_kwargs['notify_events'] = True
-    elif post_type == 'recommendation':
-        filter_kwargs['notify_recommendations'] = True
-    elif post_type == 'looking_for':
-        filter_kwargs['notify_looking_for'] = True
-        
-    candidates = User.objects.filter(**filter_kwargs).exclude(id=creator.id)
     
-    # 3. Filter candidates by distance and friendship
-    for user in candidates:
-        if user.latitude is None or user.longitude is None:
-            continue
-            
-        radius = user.distance_radius if user.distance_radius is not None else 25
-        is_friend = user.id in friend_ids
-        dist = None
+    # 1. Send Firebase Push Notification
+    push_data = {
+        "notification_id": str(notification.id),
+        "type": notification_type,
+    }
+    if event:
+        push_data["event_id"] = str(event.id)
+    if recommendation:
+        push_data["recommendation_id"] = str(recommendation.id)
+    if looking_for:
+        push_data["looking_for_id"] = str(looking_for.id)
+    if alert:
+        push_data["alert_id"] = str(alert.id)
         
-        if post.latitude is not None and post.longitude is not None:
-            dist = haversine_distance(user.latitude, user.longitude, post.latitude, post.longitude)
+    send_push_notification(user, title, message, data=push_data)
+
+    # 2. Send real-time notification via Channels if layer is active
+    if channel_layer:
+        unread_count = Notification.objects.filter(user=user, is_read=False).count()
+        data = NotificationSerializer(notification).data
+        data['unread_count'] = unread_count
+        
+        try:
+            async_to_sync(channel_layer.group_send)(
+                f"user_{user.id}",
+                {
+                    "type": "send_notification",
+                    "data": data
+                }
+            )
+        except Exception:
+            # In test environment or environments without fully active layer setup
+            pass
             
-        if is_friend or (dist is not None and dist <= radius):
-            # Create the Notification database record
-            title = ""
-            message = ""
-            event_obj = None
-            rec_obj = None
-            lf_obj = None
-            
-            creator_name = creator.first_name if creator.first_name else creator.email
-            
-            if post_type == 'event':
-                title = "New Upcoming Event"
-                message = f"{creator_name} posted a new event: {post.name}."
-                event_obj = post
-            elif post_type == 'recommendation':
-                title = "New Recommendation"
-                message = f"{creator_name} posted a recommendation in {post.category}."
-                rec_obj = post
-            elif post_type == 'looking_for':
-                title = "New Looking For Request"
-                message = f"{creator_name} is looking for {post.category}."
-                lf_obj = post
-                
-            notification = Notification.objects.create(
-                user=user,
-                notification_type=post_type,
+    return notification
+
+
+@receiver(post_save, sender=LookingForLike)
+def looking_for_like_save(sender, instance, created, **kwargs):
+    if created:
+        post = instance.looking_for
+        recipient = post.creator
+        sender_user = instance.user
+        
+        # Don't notify self
+        if recipient != sender_user:
+            sender_name = sender_user.first_name if sender_user.first_name else sender_user.email
+            title = "New Like"
+            message = f"{sender_name} liked your Looking For request."
+            create_and_send_notification(
+                user=recipient,
+                notification_type='looking_for',
                 title=title,
                 message=message,
-                event=event_obj,
-                recommendation=rec_obj,
-                looking_for=lf_obj
+                looking_for=post
             )
+
+
+@receiver(post_save, sender=LookingForComment)
+def looking_for_comment_save(sender, instance, created, **kwargs):
+    if created:
+        post = instance.looking_for
+        recipient = post.creator
+        sender_user = instance.user
+        
+        # Don't notify self
+        if recipient != sender_user:
+            sender_name = sender_user.first_name if sender_user.first_name else sender_user.email
+            title = "New Comment"
+            message = f"{sender_name} commented on your Looking For request: {instance.content[:50]}"
+            create_and_send_notification(
+                user=recipient,
+                notification_type='looking_for',
+                title=title,
+                message=message,
+                looking_for=post
+            )
+
+
+@receiver(post_save, sender=RecommendationLike)
+def recommendation_like_save(sender, instance, created, **kwargs):
+    if created:
+        post = instance.recommendation
+        recipient = post.creator
+        sender_user = instance.user
+        
+        # Don't notify self
+        if recipient != sender_user:
+            sender_name = sender_user.first_name if sender_user.first_name else sender_user.email
+            title = "New Like"
+            message = f"{sender_name} liked your Recommendation."
+            create_and_send_notification(
+                user=recipient,
+                notification_type='recommendation',
+                title=title,
+                message=message,
+                recommendation=post
+            )
+
+
+@receiver(post_save, sender=RecommendationComment)
+def recommendation_comment_save(sender, instance, created, **kwargs):
+    if created:
+        post = instance.recommendation
+        recipient = post.creator
+        sender_user = instance.user
+        
+        # Don't notify self
+        if recipient != sender_user:
+            sender_name = sender_user.first_name if sender_user.first_name else sender_user.email
+            title = "New Comment"
+            message = f"{sender_name} commented on your Recommendation: {instance.content[:50]}"
+            create_and_send_notification(
+                user=recipient,
+                notification_type='recommendation',
+                title=title,
+                message=message,
+                recommendation=post
+            )
+
+
+@receiver(post_save, sender=Alert)
+def alert_post_save(sender, instance, created, **kwargs):
+    if created:
+        creator = instance.creator
+        privacy = instance.privacy
+        
+        if privacy == 'only_me':
+            return
             
-            # Send real-time notification via Channels if layer is active
-            if channel_layer:
-                unread_count = Notification.objects.filter(user=user, is_read=False).count()
-                data = NotificationSerializer(notification).data
-                data['unread_count'] = unread_count
+        # 1. Fetch friend IDs of the creator
+        friendships = Friendship.objects.filter(
+            Q(status='accepted') & (Q(sender=creator) | Q(receiver=creator))
+        )
+        friend_ids = set()
+        for f in friendships:
+            if f.sender == creator:
+                friend_ids.add(f.receiver_id)
+            else:
+                friend_ids.add(f.sender_id)
                 
-                try:
-                    async_to_sync(channel_layer.group_send)(
-                        f"user_{user.id}",
-                        {
-                            "type": "send_notification",
-                            "data": data
-                        }
-                    )
-                except Exception:
-                    # In test environment or environments without fully active layer setup
-                    pass
-
-@receiver(post_save, sender=Event)
-def event_post_save(sender, instance, created, **kwargs):
-    if created:
-        notify_matching_users(instance, 'event')
-
-@receiver(post_save, sender=Recommendation)
-def recommendation_post_save(sender, instance, created, **kwargs):
-    if created:
-        notify_matching_users(instance, 'recommendation')
-
-@receiver(post_save, sender=LookingFor)
-def looking_for_post_save(sender, instance, created, **kwargs):
-    if created:
-        notify_matching_users(instance, 'looking_for')
+        # 2. Query potential users to notify
+        candidates = User.objects.filter(is_active=True).exclude(id=creator.id)
+        
+        for user in candidates:
+            is_friend = user.id in friend_ids
+            
+            # Check privacy constraints
+            if privacy == 'friends' and not is_friend:
+                continue
+                
+            # If privacy is 'anyone', check radius proximity
+            if privacy == 'anyone':
+                # If they are a friend, they automatically match
+                if not is_friend:
+                    if user.latitude is None or user.longitude is None:
+                        continue
+                    if instance.latitude is None or instance.longitude is None:
+                        continue
+                        
+                    radius = user.distance_radius if user.distance_radius is not None else 25
+                    dist = haversine_distance(user.latitude, user.longitude, instance.latitude, instance.longitude)
+                    if dist > radius:
+                        continue
+                        
+            # If we reached here, notify the user
+            creator_name = creator.first_name if creator.first_name else creator.email
+            alert_type_display = instance.get_alert_type_display() if hasattr(instance, 'get_alert_type_display') else instance.alert_type
+            
+            title = f"New {alert_type_display}"
+            message = f"{creator_name} posted a new {alert_type_display}: {instance.title or instance.content[:30]}."
+            
+            create_and_send_notification(
+                user=user,
+                notification_type='alert',
+                title=title,
+                message=message,
+                alert=instance
+            )
