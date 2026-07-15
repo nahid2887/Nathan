@@ -5,6 +5,7 @@ from .views import (
     MarkNotificationReadView,
     MarkAllNotificationsReadView,
     RegisterFCMTokenView,
+    NotificationSettingsView,
 )
 
 urlpatterns = [
@@ -13,4 +14,5 @@ urlpatterns = [
     path('<int:pk>/read/', MarkNotificationReadView.as_view(), name='mark-notification-read'),
     path('read-all/', MarkAllNotificationsReadView.as_view(), name='mark-all-notifications-read'),
     path('register-token/', RegisterFCMTokenView.as_view(), name='register-fcm-token'),
+    path('settings/', NotificationSettingsView.as_view(), name='notification-settings'),
 ]

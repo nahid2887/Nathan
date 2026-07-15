@@ -8,16 +8,20 @@ class User(AbstractUser):
     profile_photo = models.ImageField(upload_to='profile_photos/', null=True, blank=True)
     latitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
     longitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
-    distance_radius = models.IntegerField(default=25, null=True, blank=True)
+    distance_radius = models.FloatField(default=25.0, null=True, blank=True)
     about_me = models.TextField(null=True, blank=True)
     location_name = models.CharField(max_length=255, null=True, blank=True)
     notify_events = models.BooleanField(default=True)
     notify_recommendations = models.BooleanField(default=True)
     notify_looking_for = models.BooleanField(default=True)
+    notify_new_posts = models.BooleanField(default=True)
+    notify_marketplace = models.BooleanField(default=True)
+    notify_business = models.BooleanField(default=True)
     is_subscribed = models.BooleanField(default=False)
     subscription_expiry = models.DateTimeField(null=True, blank=True)
     current_plan = models.ForeignKey('custom_admin.SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True)
     fcm_token = models.TextField(null=True, blank=True)
+
 
     def check_subscription(self):
         from django.utils import timezone

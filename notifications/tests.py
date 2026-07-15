@@ -321,3 +321,67 @@ class NotificationTests(APITestCase):
         notifications = Notification.objects.filter(user=self.recipient)
         self.assertEqual(notifications.count(), 0)
         mock_push.assert_not_called()
+
+    def test_get_notification_settings(self):
+        url = reverse('notification-settings')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['settings']['notify_new_posts'], True)
+        self.assertEqual(response.data['settings']['notify_marketplace'], True)
+        self.assertEqual(response.data['settings']['notify_business'], True)
+        self.assertEqual(response.data['settings']['notify_events'], True)
+        self.assertEqual(response.data['settings']['distance_radius'], 25.0)
+
+    def test_patch_notification_settings(self):
+        url = reverse('notification-settings')
+        payload = {
+            "notify_new_posts": False,
+            "notify_marketplace": True,
+            "notify_business": False,
+            "distance_radius": 2.5
+        }
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['success'])
+        self.assertEqual(response.data['settings']['notify_new_posts'], False)
+        self.assertEqual(response.data['settings']['notify_marketplace'], True)
+        self.assertEqual(response.data['settings']['notify_business'], False)
+        self.assertEqual(response.data['settings']['notify_events'], True) # unchanged
+        self.assertEqual(response.data['settings']['distance_radius'], 2.5)
+
+        # Verify in database
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.notify_new_posts, False)
+        self.assertEqual(self.recipient.notify_business, False)
+        self.assertEqual(self.recipient.distance_radius, 2.5)
+
+    def test_patch_settings_invalid_radius_too_low(self):
+        url = reverse('notification-settings')
+        payload = {"distance_radius": 0.2}
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+        self.assertIn('distance_radius', response.data['errors'])
+
+    def test_patch_settings_invalid_radius_too_high(self):
+        url = reverse('notification-settings')
+        payload = {"distance_radius": 15.0}
+        response = self.client.patch(url, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data['success'])
+        self.assertIn('distance_radius', response.data['errors'])
+
+    def test_patch_settings_boundary_conditions(self):
+        url = reverse('notification-settings')
+        # Min boundary (0.5)
+        response = self.client.patch(url, {"distance_radius": 0.5}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['settings']['distance_radius'], 0.5)
+
+        # Max boundary (10.0)
+        response = self.client.patch(url, {"distance_radius": 10.0}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['settings']['distance_radius'], 10.0)
+
+

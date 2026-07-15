@@ -2,6 +2,7 @@ from django.utils.decorators import method_decorator
 from rest_framework import viewsets, permissions, status
 from rest_framework.views import APIView
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -12,7 +13,8 @@ from .serializers import (
     BusinessProfileSerializer, 
     BusinessProfileWriteSerializer
 )
-from .permissions import HasActiveSubscription
+from .permissions import HasActiveSubscription, HasActiveSubscriptionForWrite
+
 
 class IsCreatorOrReadOnly(permissions.BasePermission):
     """
@@ -51,6 +53,12 @@ class BusinessViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, HasActiveSubscription, IsCreatorOrReadOnly]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
+    def get_queryset(self):
+        queryset = Business.objects.all().order_by('-created_at')
+        if self.action == 'list' and self.request.user and self.request.user.is_authenticated:
+            queryset = queryset.exclude(creator=self.request.user)
+        return queryset
+
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return BusinessWriteSerializer
@@ -60,12 +68,24 @@ class BusinessViewSet(viewsets.ModelViewSet):
         serializer.save(creator=self.request.user)
 
     @swagger_auto_schema(
-        operation_summary="List all Businesses",
-        operation_description="Retrieve a list of all active businesses. Only accessible to active subscribers.",
+        operation_summary="List other users' Businesses",
+        operation_description="Retrieve a list of businesses created by other users.",
         tags=['Business']
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_summary="List own Businesses",
+        operation_description="Retrieve a list of businesses created by the currently logged-in user.",
+        tags=['Business']
+    )
+    @action(detail=False, methods=['get'], url_path='my')
+    def my_businesses(self, request):
+        queryset = Business.objects.filter(creator=request.user).order_by('-created_at')
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
     @swagger_auto_schema(
         operation_summary="Retrieve a Business",

@@ -4,7 +4,8 @@ from rest_framework import status, permissions
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import Notification
-from .serializers import NotificationSerializer, RegisterFCMTokenSerializer
+from .serializers import NotificationSerializer, RegisterFCMTokenSerializer, NotificationSettingsSerializer
+
 
 
 class NotificationListView(APIView):
@@ -178,4 +179,57 @@ class RegisterFCMTokenView(APIView):
             "success": True,
             "message": "FCM device token registered successfully."
         }, status=status.HTTP_200_OK)
+
+
+class NotificationSettingsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_summary="Get Push Notification Settings",
+        operation_description="Retrieve push notification preferences and radius of the authenticated user.",
+        tags=['Notifications'],
+        responses={200: NotificationSettingsSerializer()}
+    )
+    def get(self, request):
+        serializer = NotificationSettingsSerializer(request.user)
+        return Response({
+            "success": True,
+            "settings": serializer.data
+        }, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_summary="Update Push Notification Settings",
+        operation_description="Update push notification preferences and radius of the authenticated user using PATCH.",
+        tags=['Notifications'],
+        request_body=NotificationSettingsSerializer,
+        responses={
+            200: openapi.Response(
+                description="Settings updated successfully",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                        "message": openapi.Schema(type=openapi.TYPE_STRING),
+                        "settings": openapi.Schema(type=openapi.TYPE_OBJECT)
+                    }
+                )
+            ),
+            400: "Invalid payload"
+        }
+    )
+    def patch(self, request):
+        serializer = NotificationSettingsSerializer(request.user, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({
+                "success": False,
+                "errors": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer.save()
+        return Response({
+            "success": True,
+            "message": "Notification settings updated successfully.",
+            "settings": serializer.data
+        }, status=status.HTTP_200_OK)
+
 

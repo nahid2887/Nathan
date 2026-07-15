@@ -65,7 +65,7 @@ class BusinessAPITests(APITestCase):
 
     def test_subscribed_user_can_list_businesses(self):
         Business.objects.create(
-            creator=self.subscribed_user,
+            creator=self.unsubscribed_user,  # Created by another user
             name="Subscribed Biz",
             category="Services",
             description="Details",
@@ -75,6 +75,7 @@ class BusinessAPITests(APITestCase):
             longitude=0.0,
             location_name="Here"
         )
+
         token = self.obtain_token("subscribed@example.com")
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
         
@@ -121,6 +122,124 @@ class BusinessAPITests(APITestCase):
         
         response = self.client.post(self.list_create_url, self.business_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unsubscribed_user_cannot_retrieve_business_details(self):
+        biz = Business.objects.create(
+            creator=self.subscribed_user,
+            name="Green Valley",
+            category="Landscaping",
+            description="Special",
+            phone_number="123",
+            email_address="hello@business.com",
+            latitude=0.0,
+            longitude=0.0
+        )
+        token = self.obtain_token("unsubscribed@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        
+        detail_url = reverse('business-detail', kwargs={'pk': biz.id})
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+    def test_non_creator_subscriber_cannot_edit_business(self):
+        biz = Business.objects.create(
+            creator=self.subscribed_user,
+            name="Valley Landscaping",
+            category="Landscaping",
+            description="Special",
+            phone_number="123",
+            email_address="hello@business.com",
+            latitude=0.0,
+            longitude=0.0
+        )
+        user_b = User.objects.create_user(
+            username="user_b@example.com",
+            email="user_b@example.com",
+            password="testpassword123!",
+            is_subscribed=True,
+            subscription_expiry=timezone.now() + timedelta(days=30)
+        )
+        token = self.obtain_token("user_b@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        
+        detail_url = reverse('business-detail', kwargs={'pk': biz.id})
+        response = self.client.put(detail_url, self.business_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_user_cannot_access_businesses(self):
+        self.client.credentials()
+        response = self.client.get(self.list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_list_businesses_excludes_own(self):
+        # Create user's own business
+        Business.objects.create(
+            creator=self.subscribed_user,
+            name="My Own Biz",
+            category="Retail",
+            description="Details",
+            phone_number="123",
+            email_address="me@example.com",
+            latitude=0.0,
+            longitude=0.0
+        )
+        # Create other user's business
+        Business.objects.create(
+            creator=self.unsubscribed_user,
+            name="Other User Biz",
+            category="Retail",
+            description="Details",
+            phone_number="456",
+            email_address="other@example.com",
+            latitude=0.0,
+            longitude=0.0
+        )
+
+        token = self.obtain_token("subscribed@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        response = self.client.get(self.list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should only return Other User Biz (1 listing)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['name'], "Other User Biz")
+
+    def test_my_businesses_returns_only_own(self):
+        # Create user's own business
+        Business.objects.create(
+            creator=self.subscribed_user,
+            name="My Own Biz",
+            category="Retail",
+            description="Details",
+            phone_number="123",
+            email_address="me@example.com",
+            latitude=0.0,
+            longitude=0.0
+        )
+        # Create other user's business
+        Business.objects.create(
+            creator=self.unsubscribed_user,
+            name="Other User Biz",
+            category="Retail",
+            description="Details",
+            phone_number="456",
+            email_address="other@example.com",
+            latitude=0.0,
+            longitude=0.0
+        )
+
+        token = self.obtain_token("subscribed@example.com")
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        my_url = reverse('business-my-businesses')
+        response = self.client.get(my_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should only return My Own Biz (1 listing)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['name'], "My Own Biz")
+
+
 
 
 class BusinessProfileAPITests(APITestCase):
