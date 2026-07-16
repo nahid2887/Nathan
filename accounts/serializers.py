@@ -140,9 +140,14 @@ class ProfileSerializer(serializers.ModelSerializer):
             'id', 'full_name', 'email', 'profile_photo', 'latitude', 'longitude', 
             'distance_radius', 'about_me', 'location_name', 'notify_events', 
             'notify_recommendations', 'notify_looking_for',
-            'is_subscribed', 'subscription_expiry', 'fcm_token'
+            'is_subscribed', 'subscription_expiry', 
+            'is_deal_subscribed', 'deal_subscription_expiry', 'current_deal_plan',
+            'fcm_token'
         ]
-        read_only_fields = ['id', 'email', 'is_subscribed', 'subscription_expiry']
+        read_only_fields = [
+            'id', 'email', 'is_subscribed', 'subscription_expiry',
+            'is_deal_subscribed', 'deal_subscription_expiry', 'current_deal_plan'
+        ]
 
 
 class ProfileResponseSerializer(serializers.Serializer):

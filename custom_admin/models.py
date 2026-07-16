@@ -13,7 +13,13 @@ class SubscriptionPlan(models.Model):
         choices=BILLING_CYCLE_CHOICES, 
         default='monthly'
     )
+    plan_type = models.CharField(
+        max_length=20,
+        choices=[('business', 'Business'), ('deal', 'Deal')],
+        default='business'
+    )
     discount_offer = models.IntegerField(default=0)  # discount percentage e.g. 0 to 100
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

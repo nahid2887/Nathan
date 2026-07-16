@@ -20,6 +20,9 @@ class User(AbstractUser):
     is_subscribed = models.BooleanField(default=False)
     subscription_expiry = models.DateTimeField(null=True, blank=True)
     current_plan = models.ForeignKey('custom_admin.SubscriptionPlan', on_delete=models.SET_NULL, null=True, blank=True)
+    is_deal_subscribed = models.BooleanField(default=False)
+    deal_subscription_expiry = models.DateTimeField(null=True, blank=True)
+    current_deal_plan = models.ForeignKey('deal.DealPlan', on_delete=models.SET_NULL, null=True, blank=True)
     fcm_token = models.TextField(null=True, blank=True)
 
 
@@ -29,6 +32,14 @@ class User(AbstractUser):
             self.is_subscribed = False
             self.save(update_fields=['is_subscribed'])
         return self.is_subscribed
+
+    def check_deal_subscription(self):
+        from django.utils import timezone
+        if self.is_deal_subscribed and self.deal_subscription_expiry and self.deal_subscription_expiry < timezone.now():
+            self.is_deal_subscribed = False
+            self.save(update_fields=['is_deal_subscribed'])
+        return self.is_deal_subscribed
+
 
 
 

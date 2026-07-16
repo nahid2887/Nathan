@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/', include('listing.urls')),
     path('api/', include('business.urls')),
     path('api/', include('product_ad.urls')),
+    path('api/', include('deal.urls')),
     path('api/admin/', include('custom_admin.urls')),
 
 

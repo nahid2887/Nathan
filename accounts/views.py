@@ -1178,44 +1178,84 @@ class StripeWebhookView(APIView):
                 metadata = session.get('metadata', {})
                 user_id = metadata.get('user_id')
                 plan_id = metadata.get('plan_id')
+                plan_type = metadata.get('plan_type')
 
                 if user_id and plan_id:
-                    try:
-                        user = User.objects.get(id=user_id)
-                        plan = SubscriptionPlan.objects.get(id=plan_id)
+                    if plan_type == 'deal':
+                        from deal.models import DealPlan
+                        try:
+                            user = User.objects.get(id=user_id)
+                            plan = DealPlan.objects.get(id=plan_id)
 
-                        if plan.billing_cycle == 'monthly':
-                            duration = timedelta(days=30)
-                        elif plan.billing_cycle == 'yearly':
-                            duration = timedelta(days=365)
-                        else:
-                            duration = timedelta(days=30)
+                            if plan.billing_cycle == 'monthly':
+                                duration = timedelta(days=30)
+                            elif plan.billing_cycle == 'yearly':
+                                duration = timedelta(days=365)
+                            else:
+                                duration = timedelta(days=30)
 
-                        now = timezone.now()
-                        if user.subscription_expiry and user.subscription_expiry > now:
-                            start_date = user.subscription_expiry
-                        else:
-                            start_date = now
+                            now = timezone.now()
+                            if user.deal_subscription_expiry and user.deal_subscription_expiry > now:
+                                start_date = user.deal_subscription_expiry
+                            else:
+                                start_date = now
 
-                        new_expiry = start_date + duration
+                            new_expiry = start_date + duration
 
-                        user.is_subscribed = True
-                        user.subscription_expiry = new_expiry
-                        user.current_plan = plan
-                        user.save()
+                            user.is_deal_subscribed = True
+                            user.deal_subscription_expiry = new_expiry
+                            user.current_deal_plan = plan
+                            user.save()
 
-                        # Print payment details directly to Django terminal
-                        print("\n" + "=" * 60)
-                        print("STRIPE WEBHOOK PAYMENT RECEIVED")
-                        print(f"Session ID:         {session.get('id')}")
-                        print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
-                        print(f"Plan:               {plan.name} (ID: {plan.id})")
-                        print(f"Amount Paid:        AU$ {plan.price}")
-                        print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
-                        print(f"New Expiry Date:    {new_expiry}")
-                        print("=" * 60 + "\n")
-                    except (User.DoesNotExist, SubscriptionPlan.DoesNotExist):
-                        pass
+                            # Print deal payment details directly to Django terminal
+                            print("\n" + "=" * 60)
+                            print("STRIPE WEBHOOK DEAL PLAN PAYMENT RECEIVED")
+                            print(f"Session ID:         {session.get('id')}")
+                            print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
+                            print(f"Deal Plan:          {plan.name} (ID: {plan.id})")
+                            print(f"Amount Paid:        AU$ {plan.price}")
+                            print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
+                            print(f"New Expiry Date:    {new_expiry}")
+                            print("=" * 60 + "\n")
+                        except (User.DoesNotExist, DealPlan.DoesNotExist):
+                            pass
+                    else:
+                        try:
+                            user = User.objects.get(id=user_id)
+                            plan = SubscriptionPlan.objects.get(id=plan_id)
+
+                            if plan.billing_cycle == 'monthly':
+                                duration = timedelta(days=30)
+                            elif plan.billing_cycle == 'yearly':
+                                duration = timedelta(days=365)
+                            else:
+                                duration = timedelta(days=30)
+
+                            now = timezone.now()
+                            if user.subscription_expiry and user.subscription_expiry > now:
+                                start_date = user.subscription_expiry
+                            else:
+                                start_date = now
+
+                            new_expiry = start_date + duration
+
+                            user.is_subscribed = True
+                            user.subscription_expiry = new_expiry
+                            user.current_plan = plan
+                            user.save()
+
+                            # Print payment details directly to Django terminal
+                            print("\n" + "=" * 60)
+                            print("STRIPE WEBHOOK PAYMENT RECEIVED")
+                            print(f"Session ID:         {session.get('id')}")
+                            print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
+                            print(f"Plan:               {plan.name} (ID: {plan.id})")
+                            print(f"Amount Paid:        AU$ {plan.price}")
+                            print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
+                            print(f"New Expiry Date:    {new_expiry}")
+                            print("=" * 60 + "\n")
+                        except (User.DoesNotExist, SubscriptionPlan.DoesNotExist):
+                            pass
 
         return Response({"success": True}, status=status.HTTP_200_OK)
 

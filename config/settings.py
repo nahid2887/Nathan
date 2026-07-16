@@ -62,6 +62,7 @@ INSTALLED_APPS = [
      'custom_admin',
      'business',
      'product_ad',
+     'deal',
 ]
 
 MIDDLEWARE = [
