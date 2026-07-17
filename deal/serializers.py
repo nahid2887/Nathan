@@ -21,11 +21,26 @@ class DealPlanSerializer(serializers.ModelSerializer):
 
 class DealCreatorSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='first_name', read_only=True)
+    impressions_count = serializers.SerializerMethodField()
 
     class Meta:
         from django.contrib.auth import get_user_model
         model = get_user_model()
-        fields = ['id', 'full_name', 'email', 'profile_photo']
+        fields = ['id', 'full_name', 'email', 'profile_photo', 'impressions_count']
+
+    def get_impressions_count(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated and request.user == obj:
+            from django.db.models import Sum
+            result = obj.created_deals.aggregate(total_views=Sum('views_count'))
+            return result['total_views'] or 0
+        return None
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        if ret.get('impressions_count') is None:
+            ret.pop('impressions_count', None)
+        return ret
 
 
 class DealPhotoSerializer(serializers.ModelSerializer):
@@ -38,6 +53,9 @@ class DealPhotoSerializer(serializers.ModelSerializer):
 class DealSerializer(serializers.ModelSerializer):
     creator = DealCreatorSerializer(read_only=True)
     photos = DealPhotoSerializer(many=True, read_only=True)
+    distance_km = serializers.SerializerMethodField()
+    is_saved = serializers.SerializerMethodField()
+    clicks_count = serializers.SerializerMethodField()
 
     class Meta:
         from .models import Deal
@@ -47,9 +65,46 @@ class DealSerializer(serializers.ModelSerializer):
             'business_name', 'business_type', 'address', 'latitude', 'longitude',
             'location_name', 'phone_number', 'website', 'social_links',
             'start_date', 'end_date', 'terms_conditions', 'is_active', 'photos',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at', 'distance_km', 'is_saved',
+            'views_count', 'call_clicks_count', 'directions_clicks_count', 'saves_count',
+            'clicks_count'
         ]
-        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'creator', 'photos', 'created_at', 'updated_at', 'distance_km', 'is_saved',
+            'views_count', 'call_clicks_count', 'directions_clicks_count', 'saves_count',
+            'clicks_count'
+        ]
+
+    def get_distance_km(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            user = request.user
+            if user.latitude is not None and user.longitude is not None:
+                if obj.latitude is not None and obj.longitude is not None:
+                    from events.views import haversine_distance
+                    dist = haversine_distance(user.latitude, user.longitude, obj.latitude, obj.longitude)
+                    return round(dist, 2)
+        return None
+
+    def get_is_saved(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            return obj.saved_by_users.filter(user=request.user).exists()
+        return False
+
+    def get_clicks_count(self, obj):
+        return obj.call_clicks_count + obj.directions_clicks_count
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        if not (request and request.user and request.user.is_authenticated and instance.creator == request.user):
+            analytics_fields = [
+                'views_count', 'call_clicks_count', 'directions_clicks_count', 'saves_count', 'clicks_count'
+            ]
+            for field in analytics_fields:
+                ret.pop(field, None)
+        return ret
 
 
 class DealWriteSerializer(serializers.ModelSerializer):

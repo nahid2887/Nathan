@@ -984,7 +984,7 @@ class PlanListView(APIView):
         cancel_url = request.data.get('cancel_url')
 
         if not success_url:
-            success_url = request.build_absolute_uri('/api/plans/') + 'verify/?session_id={CHECKOUT_SESSION_ID}'
+            success_url = request.build_absolute_uri('/api/payment/success/') + '?session_id={CHECKOUT_SESSION_ID}'
         if not cancel_url:
             cancel_url = request.build_absolute_uri('/api/plans/')
 
@@ -1028,20 +1028,20 @@ class PlanListView(APIView):
             return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class PlanVerifyView(APIView):
+class PaymentSuccessView(APIView):
     from rest_framework.permissions import AllowAny
     permission_classes = [AllowAny]
 
     @swagger_auto_schema(
-        operation_summary="Verify Stripe Checkout Session",
-        operation_description="Verify checkout session payment and activate subscription if successful.",
+        operation_summary="Stripe Payment Success Redirect & Verification",
+        operation_description="Verifies the payment session_id and activates the subscription plan.",
         tags=['Payment'],
         manual_parameters=[
-            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe Checkout Session ID", type=openapi.TYPE_STRING, required=True)
+            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe Session ID", type=openapi.TYPE_STRING, required=True)
         ],
         responses={
             200: openapi.Response(
-                description="Subscription verified and updated",
+                description="Subscription verified and updated successfully",
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
@@ -1052,7 +1052,7 @@ class PlanVerifyView(APIView):
                     }
                 )
             ),
-            400: "Invalid session_id or verification failed"
+            400: "Verification failed"
         }
     )
     def get(self, request):
@@ -1060,70 +1060,97 @@ class PlanVerifyView(APIView):
         from django.conf import settings
         from django.utils import timezone
         from datetime import timedelta
-        from custom_admin.models import SubscriptionPlan
         from accounts.models import User
+        from custom_admin.models import SubscriptionPlan
+        from deal.models import DealPlan
 
         stripe.api_key = settings.STRIPE_SECRET_KEY
         session_id = request.query_params.get('session_id')
         if not session_id:
             return Response({"success": False, "message": "session_id query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if session_id == '{CHECKOUT_SESSION_ID}' or '{CHECKOUT_SESSION_ID}' in session_id:
+            return Response({
+                "success": False,
+                "message": "Placeholder checkout session ID. Please go through checkout flow."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             session = stripe.checkout.Session.retrieve(session_id)
-            
             if session.payment_status != 'paid':
                 return Response({"success": False, "message": "Session has not been paid yet."}, status=status.HTTP_400_BAD_REQUEST)
 
             metadata = session.metadata
             user_id = metadata.get('user_id')
             plan_id = metadata.get('plan_id')
+            plan_type = metadata.get('plan_type')
 
             if not user_id or not plan_id:
                 return Response({"success": False, "message": "Invalid session metadata."}, status=status.HTTP_400_BAD_REQUEST)
 
-            try:
-                user = User.objects.get(id=user_id)
+            user = User.objects.get(id=user_id)
+
+            if plan_type == 'deal':
+                plan = DealPlan.objects.get(id=plan_id)
+                if plan.billing_cycle == 'monthly':
+                    duration = timedelta(days=30)
+                elif plan.billing_cycle == 'yearly':
+                    duration = timedelta(days=365)
+                else:
+                    duration = timedelta(days=30)
+
+                now = timezone.now()
+                # Check to see if webhook already processed it
+                if user.current_deal_plan == plan and user.deal_subscription_expiry and user.deal_subscription_expiry > now:
+                    pass
+                else:
+                    if user.deal_subscription_expiry and user.deal_subscription_expiry > now:
+                        start_date = user.deal_subscription_expiry
+                    else:
+                        start_date = now
+                    new_expiry = start_date + duration
+                    user.is_deal_subscribed = True
+                    user.deal_subscription_expiry = new_expiry
+                    user.current_deal_plan = plan
+                    user.save()
+
+                return Response({
+                    "success": True,
+                    "message": "Deal subscription successfully activated/extended.",
+                    "is_subscribed": user.is_deal_subscribed,
+                    "subscription_expiry": user.deal_subscription_expiry
+                }, status=status.HTTP_200_OK)
+
+            else:
                 plan = SubscriptionPlan.objects.get(id=plan_id)
-            except (User.DoesNotExist, SubscriptionPlan.DoesNotExist):
-                return Response({"success": False, "message": "User or Plan from metadata not found."}, status=status.HTTP_400_BAD_REQUEST)
+                if plan.billing_cycle == 'monthly':
+                    duration = timedelta(days=30)
+                elif plan.billing_cycle == 'yearly':
+                    duration = timedelta(days=365)
+                else:
+                    duration = timedelta(days=30)
 
-            if plan.billing_cycle == 'monthly':
-                duration = timedelta(days=30)
-            elif plan.billing_cycle == 'yearly':
-                duration = timedelta(days=365)
-            else:
-                duration = timedelta(days=30)
+                now = timezone.now()
+                # Check to see if webhook already processed it
+                if user.current_plan == plan and user.subscription_expiry and user.subscription_expiry > now:
+                    pass
+                else:
+                    if user.subscription_expiry and user.subscription_expiry > now:
+                        start_date = user.subscription_expiry
+                    else:
+                        start_date = now
+                    new_expiry = start_date + duration
+                    user.is_subscribed = True
+                    user.subscription_expiry = new_expiry
+                    user.current_plan = plan
+                    user.save()
 
-            now = timezone.now()
-            if user.subscription_expiry and user.subscription_expiry > now:
-                start_date = user.subscription_expiry
-            else:
-                start_date = now
-
-            new_expiry = start_date + duration
-
-            user.is_subscribed = True
-            user.subscription_expiry = new_expiry
-            user.current_plan = plan
-            user.save()
-
-            # Print payment details directly to Django terminal
-            print("\n" + "=" * 60)
-            print("STRIPE PAYMENT VERIFICATION SUCCESSFUL")
-            print(f"Session ID:         {session_id}")
-            print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
-            print(f"Plan:               {plan.name} (ID: {plan.id})")
-            print(f"Amount Paid:        AU$ {plan.price}")
-            print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
-            print(f"New Expiry Date:    {new_expiry}")
-            print("=" * 60 + "\n")
-
-            return Response({
-                "success": True,
-                "message": "Subscription successfully activated/extended.",
-                "is_subscribed": user.is_subscribed,
-                "subscription_expiry": user.subscription_expiry
-            }, status=status.HTTP_200_OK)
+                return Response({
+                    "success": True,
+                    "message": "Subscription successfully activated/extended.",
+                    "is_subscribed": user.is_subscribed,
+                    "subscription_expiry": user.subscription_expiry
+                }, status=status.HTTP_200_OK)
 
         except Exception as e:
             return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)

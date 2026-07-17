@@ -18,7 +18,7 @@ from .views import (
     RemoveFriendView,
     PlanListView,
     MyItemsView,
-    PlanVerifyView,
+    PaymentSuccessView,
     StripeWebhookView,
     MySubscriptionView,
 )
@@ -131,9 +131,9 @@ urlpatterns = [
         name='my_subscription'
     ),
     path(
-        'plans/verify/',
-        PlanVerifyView.as_view(),
-        name='plans_verify'
+        'payment/success/',
+        PaymentSuccessView.as_view(),
+        name='payment_success'
     ),
     path(
         'payment/stripe/webhook/',

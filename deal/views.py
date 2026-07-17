@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
@@ -9,7 +10,7 @@ from datetime import timedelta
 import stripe
 
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
-from .models import DealPlan, Deal
+from .models import DealPlan, Deal, SavedDeal
 from .serializers import DealPlanSerializer, DealSerializer, DealWriteSerializer
 
 class IsSuperUserOrReadOnly(permissions.BasePermission):
@@ -192,7 +193,7 @@ class DealPlanSubscribeView(APIView):
         cancel_url = request.data.get('cancel_url')
 
         if not success_url:
-            success_url = request.build_absolute_uri('/api/deal-plans/verify/') + '?session_id={CHECKOUT_SESSION_ID}'
+            success_url = request.build_absolute_uri('/api/payment/success/') + '?session_id={CHECKOUT_SESSION_ID}'
         if not cancel_url:
             cancel_url = request.build_absolute_uri('/api/deal-plans/')
 
@@ -237,104 +238,7 @@ class DealPlanSubscribeView(APIView):
             return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class DealPlanVerifyView(APIView):
-    permission_classes = [permissions.AllowAny]
 
-    @swagger_auto_schema(
-        operation_summary="Verify Stripe Checkout Session for Deal Plan",
-        operation_description="Verify checkout session payment and activate deal subscription.",
-        tags=['Deal Payment'],
-        manual_parameters=[
-            openapi.Parameter('session_id', openapi.IN_QUERY, description="Stripe Session ID", type=openapi.TYPE_STRING, required=True)
-        ],
-        responses={
-            200: openapi.Response(
-                description="Deal subscription verified",
-                schema=openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    properties={
-                        "success": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        "message": openapi.Schema(type=openapi.TYPE_STRING),
-                        "is_deal_subscribed": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                        "deal_subscription_expiry": openapi.Schema(type=openapi.TYPE_STRING)
-                    }
-                )
-            ),
-            400: "Verification failed"
-        }
-    )
-    def get(self, request):
-        from accounts.models import User
-
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        session_id = request.query_params.get('session_id')
-        if not session_id:
-            return Response({"success": False, "message": "session_id query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if session_id == '{CHECKOUT_SESSION_ID}' or '{CHECKOUT_SESSION_ID}' in session_id:
-            return Response({
-                "success": False,
-                "message": "This is a placeholder checkout session ID template. To verify a payment, please go through the checkout URL returned from the subscribe endpoint, complete the payment, and let Stripe redirect you."
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            session = stripe.checkout.Session.retrieve(session_id)
-            if session.payment_status != 'paid':
-                return Response({"success": False, "message": "Session has not been paid yet."}, status=status.HTTP_400_BAD_REQUEST)
-
-            metadata = session.metadata
-            user_id = metadata.get('user_id')
-            plan_id = metadata.get('plan_id')
-            plan_type = metadata.get('plan_type')
-
-            if plan_type != 'deal' or not user_id or not plan_id:
-                return Response({"success": False, "message": "Invalid session metadata for deal plans."}, status=status.HTTP_400_BAD_REQUEST)
-
-            try:
-                user = User.objects.get(id=user_id)
-                plan = DealPlan.objects.get(id=plan_id)
-            except (User.DoesNotExist, DealPlan.DoesNotExist):
-                return Response({"success": False, "message": "User or Deal Plan from metadata not found."}, status=status.HTTP_400_BAD_REQUEST)
-
-            if plan.billing_cycle == 'monthly':
-                duration = timedelta(days=30)
-            elif plan.billing_cycle == 'yearly':
-                duration = timedelta(days=365)
-            else:
-                duration = timedelta(days=30)
-
-            now = timezone.now()
-            if user.deal_subscription_expiry and user.deal_subscription_expiry > now:
-                start_date = user.deal_subscription_expiry
-            else:
-                start_date = now
-
-            new_expiry = start_date + duration
-
-            user.is_deal_subscribed = True
-            user.deal_subscription_expiry = new_expiry
-            user.current_deal_plan = plan
-            user.save()
-
-            print("\n" + "=" * 60)
-            print("STRIPE DEAL PLAN PAYMENT VERIFICATION SUCCESSFUL")
-            print(f"Session ID:         {session_id}")
-            print(f"User:               {user.username} (ID: {user.id}, Email: {user.email})")
-            print(f"Deal Plan:          {plan.name} (ID: {plan.id})")
-            print(f"Amount Paid:        AU$ {plan.price}")
-            print(f"Billing Cycle:      {plan.get_billing_cycle_display()}")
-            print(f"New Expiry Date:    {new_expiry}")
-            print("=" * 60 + "\n")
-
-            return Response({
-                "success": True,
-                "message": "Deal subscription verified and activated successfully.",
-                "is_deal_subscribed": user.is_deal_subscribed,
-                "deal_subscription_expiry": user.deal_subscription_expiry
-            }, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class IsDealCreatorOrReadOnly(permissions.BasePermission):
@@ -366,9 +270,20 @@ class DealViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Deal.objects.all().order_by('-created_at')
-        category = self.request.query_params.get('category')
+        
+        category = self.request.query_params.get('category', '').strip()
         if category:
             queryset = queryset.filter(category__iexact=category)
+
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(title__icontains=search) | 
+                Q(description__icontains=search) | 
+                Q(business_name__icontains=search)
+            )
+            
         return queryset
 
     def perform_create(self, serializer):
@@ -376,7 +291,7 @@ class DealViewSet(viewsets.ModelViewSet):
 
     @swagger_auto_schema(
         operation_summary="List all Deals",
-        operation_description="Allows authenticated users to list all active deals. Optional query param ?category=<category_name> filters by category.",
+        operation_description="Allows authenticated users to list all active deals. Optional query param ?category=<category_name> filters by category, and ?search=<keyword> searches in title, description, or business name.",
         manual_parameters=[
             openapi.Parameter(
                 'category',
@@ -385,6 +300,13 @@ class DealViewSet(viewsets.ModelViewSet):
                 type=openapi.TYPE_STRING,
                 required=False,
                 enum=[choice[0] for choice in Deal.CATEGORY_CHOICES]
+            ),
+            openapi.Parameter(
+                'search',
+                openapi.IN_QUERY,
+                description="Search keyword in title, description, or business name",
+                type=openapi.TYPE_STRING,
+                required=False
             )
         ],
         tags=['Deals']
@@ -398,6 +320,10 @@ class DealViewSet(viewsets.ModelViewSet):
         tags=['Deals']
     )
     def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if request.user and request.user.is_authenticated and instance.creator != request.user:
+            instance.views_count += 1
+            instance.save(update_fields=['views_count'])
         return super().retrieve(request, *args, **kwargs)
 
     @swagger_auto_schema(
@@ -437,4 +363,274 @@ class DealViewSet(viewsets.ModelViewSet):
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        method='get',
+        manual_parameters=[
+            openapi.Parameter('distance', openapi.IN_QUERY, description="Search radius in kilometers (defaults to user's distance_radius or 25)", type=openapi.TYPE_NUMBER),
+            openapi.Parameter('category', openapi.IN_QUERY, description="Filter by category", type=openapi.TYPE_STRING, enum=[choice[0] for choice in Deal.CATEGORY_CHOICES]),
+            openapi.Parameter('search', openapi.IN_QUERY, description="Search term in title, description, or business name", type=openapi.TYPE_STRING),
+        ],
+        responses={200: DealSerializer(many=True)},
+        tags=['Deals'],
+        operation_summary="Get nearby deals within user's profile distance radius"
+    )
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_path='nearby')
+    def nearby(self, request):
+        user = request.user
+        if user.latitude is None or user.longitude is None:
+            return Response(
+                {
+                    "success": False,
+                    "message": "User location coordinates (latitude and longitude) are not set in their profile. Please update your profile with location coordinates first."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        base_lat = float(user.latitude)
+        base_lon = float(user.longitude)
+        
+        dist_param = request.query_params.get('distance')
+        if dist_param is not None:
+            try:
+                radius = float(dist_param)
+                if radius < 0:
+                    return Response(
+                        {
+                            "success": False,
+                            "message": "Distance cannot be negative."
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except ValueError:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "Invalid distance provided in query parameters. Must be a valid number."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            radius = float(user.distance_radius) if user.distance_radius is not None else 25.0
+
+        deals = Deal.objects.all()
+        
+        category = request.query_params.get('category', '').strip()
+        if category:
+            deals = deals.filter(category__iexact=category)
+
+        search = request.query_params.get('search', '').strip()
+        if search:
+            from django.db.models import Q
+            deals = deals.filter(
+                Q(title__icontains=search) | 
+                Q(description__icontains=search) | 
+                Q(business_name__icontains=search)
+            )
+
+        from events.views import haversine_distance
+
+        nearby_deals = []
+        for deal in deals:
+            if deal.latitude is not None and deal.longitude is not None:
+                dist = haversine_distance(base_lat, base_lon, float(deal.latitude), float(deal.longitude))
+                deal.distance_km = round(dist, 2)
+            else:
+                deal.distance_km = None
+            nearby_deals.append(deal)
+
+        # Sort: items with distance first (sorted ascending), then items without distance last
+        nearby_deals.sort(key=lambda x: (x.distance_km is None, x.distance_km or 0))
+
+        serializer = DealSerializer(nearby_deals, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: openapi.Response(
+            description="Returns phone number and records a call click tap.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "phone_number": openapi.Schema(type=openapi.TYPE_STRING, description="Business phone number")
+                }
+            )
+        )},
+        tags=['Deals'],
+        operation_summary="Record phone call click and get phone number"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='click-call')
+    def click_call(self, request, pk=None):
+        deal = self.get_object()
+        if deal.creator != request.user:
+            deal.call_clicks_count += 1
+            deal.save(update_fields=['call_clicks_count'])
+        return Response({"phone_number": deal.phone_number}, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: openapi.Response(
+            description="Returns address and coordinates and records a directions click.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "address": openapi.Schema(type=openapi.TYPE_STRING),
+                    "location_name": openapi.Schema(type=openapi.TYPE_STRING),
+                    "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                    "longitude": openapi.Schema(type=openapi.TYPE_NUMBER)
+                }
+            )
+        )},
+        tags=['Deals'],
+        operation_summary="Record directions click and get location info"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='click-directions')
+    def click_directions(self, request, pk=None):
+        deal = self.get_object()
+        if deal.creator != request.user:
+            deal.directions_clicks_count += 1
+            deal.save(update_fields=['directions_clicks_count'])
+        return Response({
+            "address": deal.address,
+            "location_name": deal.location_name,
+            "latitude": deal.latitude,
+            "longitude": deal.longitude
+        }, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: openapi.Response(
+            description="Saves a deal for the authenticated user."
+        )},
+        tags=['Deals'],
+        operation_summary="Save (bookmark) a deal"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='save')
+    def save_deal(self, request, pk=None):
+        deal = self.get_object()
+        if deal.creator == request.user:
+            return Response({"success": False, "message": "You cannot save your own deal."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        saved_deal, created = SavedDeal.objects.get_or_create(user=request.user, deal=deal)
+        if created:
+            deal.saves_count += 1
+            deal.save(update_fields=['saves_count'])
+            return Response({"success": True, "message": "Deal saved successfully."}, status=status.HTTP_200_OK)
+        else:
+            return Response({"success": True, "message": "Deal was already saved."}, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: openapi.Response(
+            description="Unsaves a deal for the authenticated user."
+        )},
+        tags=['Deals'],
+        operation_summary="Unsave (remove bookmark from) a deal"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='unsave')
+    def unsave_deal(self, request, pk=None):
+        deal = self.get_object()
+        try:
+            saved_deal = SavedDeal.objects.get(user=request.user, deal=deal)
+            saved_deal.delete()
+            
+            # Decrement saves_count clamped at 0
+            if deal.saves_count > 0:
+                deal.saves_count -= 1
+                deal.save(update_fields=['saves_count'])
+                
+            return Response({"success": True, "message": "Deal unsaved successfully."}, status=status.HTTP_200_OK)
+        except SavedDeal.DoesNotExist:
+            return Response({"success": True, "message": "Deal was not saved."}, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='get',
+        responses={200: DealSerializer(many=True)},
+        tags=['Deals'],
+        operation_summary="List all saved deals of the user"
+    )
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_path='saved')
+    def saved(self, request):
+        saved_deals = Deal.objects.filter(saved_by_users__user=request.user)
+        serializer = DealSerializer(saved_deals, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: DealSerializer()},
+        tags=['Deals'],
+        operation_summary="Record deal view and get deal details"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='click-view')
+    def click_view(self, request, pk=None):
+        deal = self.get_object()
+        if deal.creator != request.user:
+            deal.views_count += 1
+            deal.save(update_fields=['views_count'])
+        serializer = DealSerializer(deal, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='get',
+        responses={200: openapi.Response(
+            description="Returns aggregate engagement analytics and performance for all deals created by the user.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "total_views": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "total_phone_call_taps": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "total_directions_clicks": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "total_saved_deals": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "deals_performance": openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                    )
+                }
+            )
+        )},
+        tags=['Deals'],
+        operation_summary="Get business/deal analytics for creator"
+    )
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated], url_path='analytics')
+    def analytics(self, request):
+        user = request.user
+        my_deals = Deal.objects.filter(creator=user).order_by('-created_at')
+
+        from django.db.models import Sum
+        aggregates = my_deals.aggregate(
+            total_views=Sum('views_count'),
+            total_phone=Sum('call_clicks_count'),
+            total_directions=Sum('directions_clicks_count'),
+            total_saves=Sum('saves_count')
+        )
+
+        serializer = DealSerializer(my_deals, many=True, context={'request': request})
+
+        data = {
+            "total_views": aggregates['total_views'] or 0,
+            "total_phone_call_taps": aggregates['total_phone'] or 0,
+            "total_directions_clicks": aggregates['total_directions'] or 0,
+            "total_saved_deals": aggregates['total_saves'] or 0,
+            "deals_performance": serializer.data
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: DealSerializer()},
+        tags=['Deals'],
+        operation_summary="Deactivate a deal created by the user"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='deactivate')
+    def deactivate(self, request, pk=None):
+        deal = self.get_object()
+        if deal.creator != request.user:
+            return Response(
+                {"success": False, "message": "You do not have permission to deactivate this deal."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        deal.is_active = False
+        deal.save(update_fields=['is_active'])
+        serializer = DealSerializer(deal, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 

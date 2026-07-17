@@ -766,46 +766,7 @@ class AccountsAPITests(APITestCase):
             self.assertEqual(response.data['session_id'], 'cs_test_123')
             self.assertEqual(response.data['checkout_url'], 'https://checkout.stripe.com/pay/cs_test_123')
 
-    def test_verify_checkout_session_success(self):
-        from unittest.mock import patch
-        from custom_admin.models import SubscriptionPlan
-        from accounts.models import User
-        from django.utils import timezone
-        
-        plan = SubscriptionPlan.objects.create(
-            name="Community Premium",
-            price="10.00",
-            billing_cycle="monthly",
-            discount_offer=10
-        )
 
-        login_response = self.client.post(self.login_url, {
-            "email": "existing@example.com",
-            "password": "oldpassword123!"
-        })
-        access_token = login_response.data['access']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
-
-        with patch('stripe.checkout.Session.retrieve') as mock_retrieve:
-            class MockSession:
-                id = 'cs_test_123'
-                payment_status = 'paid'
-                metadata = {
-                    'user_id': self.user.id,
-                    'plan_id': plan.id
-                }
-            mock_retrieve.return_value = MockSession()
-
-            verify_url = reverse('plans_verify')
-            response = self.client.get(f"{verify_url}?session_id=cs_test_123")
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertTrue(response.data['success'])
-            
-            # Check user subscription status updated
-            updated_user = User.objects.get(id=self.user.id)
-            self.assertTrue(updated_user.is_subscribed)
-            self.assertIsNotNone(updated_user.subscription_expiry)
-            self.assertEqual(updated_user.current_plan, plan)
 
     from django.test import override_settings
 
@@ -886,6 +847,46 @@ class AccountsAPITests(APITestCase):
         self.assertTrue(response.data['success'])
         self.assertTrue(response.data['is_subscribed'])
         self.assertEqual(response.data['current_plan']['name'], "Community Premium")
+
+    def test_payment_success_verification_regular_plan(self):
+        from unittest.mock import patch
+        from custom_admin.models import SubscriptionPlan
+        from accounts.models import User
+
+        plan = SubscriptionPlan.objects.create(
+            name="Community Premium",
+            price="10.00",
+            billing_cycle="monthly"
+        )
+
+        login_response = self.client.post(self.login_url, {
+            "email": "existing@example.com",
+            "password": "oldpassword123!"
+        })
+        access_token = login_response.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        with patch('stripe.checkout.Session.retrieve') as mock_retrieve:
+            class MockSession:
+                id = 'cs_test_123'
+                payment_status = 'paid'
+                metadata = {
+                    'user_id': self.user.id,
+                    'plan_id': plan.id,
+                    'plan_type': 'regular'
+                }
+            mock_retrieve.return_value = MockSession()
+
+            success_url = reverse('payment_success')
+            response = self.client.get(f"{success_url}?session_id=cs_test_123")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertTrue(response.data['success'])
+            self.assertTrue(response.data['is_subscribed'])
+
+            # Check DB updated
+            updated_user = User.objects.get(id=self.user.id)
+            self.assertTrue(updated_user.is_subscribed)
+            self.assertEqual(updated_user.current_plan, plan)
 
 
 

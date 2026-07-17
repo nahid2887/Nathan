@@ -77,6 +77,11 @@ class Deal(models.Model):
     terms_conditions = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     
+    views_count = models.PositiveIntegerField(default=0)
+    call_clicks_count = models.PositiveIntegerField(default=0)
+    directions_clicks_count = models.PositiveIntegerField(default=0)
+    saves_count = models.PositiveIntegerField(default=0)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -98,4 +103,25 @@ class DealPhoto(models.Model):
 
     def __str__(self):
         return f"Photo for Deal: {self.deal.title}"
+
+
+class SavedDeal(models.Model):
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='saved_deals'
+    )
+    deal = models.ForeignKey(
+        Deal,
+        on_delete=models.CASCADE,
+        related_name='saved_by_users'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'deal')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} saved {self.deal.title}"
 
