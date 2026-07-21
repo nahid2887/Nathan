@@ -22,17 +22,17 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
 
 @method_decorator(name='create', decorator=swagger_auto_schema(
     request_body=AlertWriteSerializer,
-    consumes=['application/json'],
+    consumes=['multipart/form-data', 'application/json'],
     tags=['Alerts']
 ))
 @method_decorator(name='update', decorator=swagger_auto_schema(
     request_body=AlertWriteSerializer,
-    consumes=['application/json'],
+    consumes=['multipart/form-data', 'application/json'],
     tags=['Alerts']
 ))
 @method_decorator(name='partial_update', decorator=swagger_auto_schema(
     request_body=AlertWriteSerializer,
-    consumes=['application/json'],
+    consumes=['multipart/form-data', 'application/json'],
     tags=['Alerts']
 ))
 class AlertViewSet(viewsets.ModelViewSet):

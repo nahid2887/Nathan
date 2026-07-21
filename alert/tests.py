@@ -212,4 +212,135 @@ class AlertAPITests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['id'], alert_a.id)
 
+    def test_create_anonymous_alert(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        data = {
+            "title": "Anonymous Emergency",
+            "content": "Need help anonymously",
+            "location_name": "Central Park",
+            "latitude": "23.780769",
+            "longitude": "90.407599",
+            "alert_type": "emergency",
+            "alert_level": "critical",
+            "is_anonymous": True
+        }
+        response = self.client.post(self.list_create_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['is_anonymous'])
+        self.assertIsNone(response.data['creator'])
+
+        # Active feed check
+        active_url = reverse('alert-active')
+        active_res = self.client.get(active_url)
+        anon_alert = next(item for item in active_res.data if item['id'] == response.data['id'])
+        self.assertIsNone(anon_alert['creator'])
+
+    def test_photo_upload_and_retrieval(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff'
+            b'\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00'
+            b'\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b'
+        )
+        photo_file = SimpleUploadedFile("alert_photo.gif", small_gif, content_type="image/gif")
+
+        data = {
+            "title": "Photo Alert",
+            "content": "Alert with image",
+            "location_name": "Coogee Beach",
+            "latitude": "23.780769",
+            "longitude": "90.407599",
+            "photo": photo_file
+        }
+        response = self.client.post(self.list_create_url, data, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNotNone(response.data['photo'])
+        self.assertIn('alert_photo', response.data['photo'])
+
+    def test_toggle_is_anonymous_on_update(self):
+        # 1. Create alert with is_anonymous=False
+        alert = Alert.objects.create(
+            creator=self.user1,
+            title="Standard Alert",
+            content="Standard content",
+            location_name="Bondi",
+            latitude=23.780000,
+            longitude=90.400000,
+            is_anonymous=False
+        )
+        detail_url = reverse('alert-detail', args=[alert.id])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # Initially creator is visible
+        res1 = self.client.get(detail_url)
+        self.assertIsNotNone(res1.data['creator'])
+
+        # 2. PATCH is_anonymous = True
+        res2 = self.client.patch(detail_url, {"is_anonymous": True})
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        self.assertTrue(res2.data['is_anonymous'])
+        self.assertIsNone(res2.data['creator'])
+
+        # 3. PATCH is_anonymous = False
+        res3 = self.client.patch(detail_url, {"is_anonymous": False})
+        self.assertEqual(res3.status_code, status.HTTP_200_OK)
+        self.assertFalse(res3.data['is_anonymous'])
+        self.assertIsNotNone(res3.data['creator'])
+
+    def test_create_alert_missing_required_fields(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        # Omit location_name, latitude, and longitude
+        data = {
+            "title": "Incomplete Alert",
+            "content": "Missing location"
+        }
+        response = self.client.post(self.list_create_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('location_name', response.data)
+        self.assertIn('latitude', response.data)
+        self.assertIn('longitude', response.data)
+
+    def test_anonymous_alert_with_friends_privacy(self):
+        user3 = User.objects.create_user(
+            username="user3_anon@example.com",
+            email="user3_anon@example.com",
+            password="password123!"
+        )
+        token3 = str(RefreshToken.for_user(user3).access_token)
+
+        # Friend relationship between user1 and user2
+        from accounts.models import Friendship
+        Friendship.objects.create(sender=self.user1, receiver=self.user2, status='accepted')
+
+        # Create alert as user1 with privacy='friends' and is_anonymous=True
+        anon_friends_alert = Alert.objects.create(
+            creator=self.user1,
+            title="Friend Anon Alert",
+            content="Secret friend alert",
+            location_name="Manly",
+            latitude=23.780000,
+            longitude=90.400000,
+            privacy="friends",
+            is_anonymous=True
+        )
+
+        # Friend (user2) sees the alert in list, but creator is null
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token2}')
+        res_user2 = self.client.get(self.list_create_url)
+        self.assertEqual(res_user2.status_code, status.HTTP_200_OK)
+        alert_ids = [item['id'] for item in res_user2.data]
+        self.assertIn(anon_friends_alert.id, alert_ids)
+        item_user2 = next(i for i in res_user2.data if i['id'] == anon_friends_alert.id)
+        self.assertIsNone(item_user2['creator'])
+
+        # Non-friend (user3) does NOT see the alert
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token3}')
+        res_user3 = self.client.get(self.list_create_url)
+        self.assertEqual(res_user3.status_code, status.HTTP_200_OK)
+        alert_ids_3 = [item['id'] for item in res_user3.data]
+        self.assertNotIn(anon_friends_alert.id, alert_ids_3)
+
 

@@ -165,7 +165,7 @@ class DealWriteSerializer(serializers.ModelSerializer):
         return deal
 
     def update(self, instance, validated_data):
-        from .models import DealPhoto
+        from .models import DealPhoto   
         photos_data = validated_data.pop('photos', None)
         
         for attr, value in validated_data.items():

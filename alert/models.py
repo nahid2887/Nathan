@@ -29,6 +29,8 @@ class Alert(models.Model):
     alert_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='alert')
     alert_level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='medium')
     privacy = models.CharField(max_length=20, choices=PRIVACY_CHOICES, default='anyone')
+    photo = models.ImageField(upload_to='alert_photos/', null=True, blank=True)
+    is_anonymous = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

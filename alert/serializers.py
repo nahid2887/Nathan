@@ -21,9 +21,16 @@ class AlertSerializer(serializers.ModelSerializer):
         model = Alert
         fields = [
             'id', 'creator', 'title', 'content', 'location_name', 'latitude', 'longitude',
-            'alert_type', 'alert_level', 'privacy', 'created_at', 'updated_at', 'type', 'distance_km', 'hours_ago'
+            'alert_type', 'alert_level', 'privacy', 'photo', 'is_anonymous',
+            'created_at', 'updated_at', 'type', 'distance_km', 'hours_ago'
         ]
         read_only_fields = ['id', 'creator', 'created_at', 'updated_at', 'type', 'distance_km', 'hours_ago']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.is_anonymous:
+            data['creator'] = None
+        return data
 
     def get_type(self, obj):
         return 'alert'
@@ -49,7 +56,7 @@ class AlertWriteSerializer(serializers.ModelSerializer):
         model = Alert
         fields = [
             'title', 'content', 'location_name', 'latitude', 'longitude',
-            'alert_type', 'alert_level', 'privacy'
+            'alert_type', 'alert_level', 'privacy', 'photo', 'is_anonymous'
         ]
 
     def to_representation(self, instance):
