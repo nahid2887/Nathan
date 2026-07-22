@@ -57,6 +57,7 @@ class ListingAPITests(APITestCase):
             "latitude": "23.780700",
             "longitude": "90.407500",
             "location_name": "Gulshan, Dhaka",
+            "pickup_date": "2026-08-01",
             "photos": [photo1, photo2, photo3]
         }
 
@@ -66,6 +67,7 @@ class ListingAPITests(APITestCase):
         self.assertEqual(response.data['status'], "for_sale")
         self.assertEqual(float(response.data['price']), 120.00)
         self.assertEqual(response.data['condition'], "like_new")
+        self.assertEqual(response.data['pickup_date'], "2026-08-01")
         self.assertEqual(len(response.data['photos']), 3)
         self.assertEqual(response.data['type'], "listing")
 

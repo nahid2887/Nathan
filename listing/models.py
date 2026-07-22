@@ -24,6 +24,7 @@ class Listing(models.Model):
     latitude = models.DecimalField(max_digits=22, decimal_places=16)
     longitude = models.DecimalField(max_digits=22, decimal_places=16)
     location_name = models.CharField(max_length=255)
+    pickup_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
