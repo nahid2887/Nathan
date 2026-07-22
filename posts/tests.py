@@ -206,3 +206,51 @@ class PostTests(APITestCase):
         self.assertEqual(post_item['comments'][0]['content'], "Looks great!")
         self.assertEqual(post_item['comments'][0]['user']['email'], "user1@example.com")
 
+    def test_create_post_with_new_fields(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff'
+            b'\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00'
+            b'\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b'
+        )
+        photo_file1 = SimpleUploadedFile("post_photo1.gif", small_gif, content_type="image/gif")
+        photo_file2 = SimpleUploadedFile("post_photo2.gif", small_gif, content_type="image/gif")
+
+        data = {
+            "title": "My Post Title",
+            "content": "This post has geolocation and photos",
+            "photos": [photo_file1, photo_file2],
+            "location_name": "Circular Quay, Sydney",
+            "latitude": "-33.8617",
+            "longitude": "151.2108",
+            "is_anonymous": False
+        }
+        response = self.client.post(self.posts_url, data, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['title'], "My Post Title")
+        self.assertEqual(response.data['location_name'], "Circular Quay, Sydney")
+        self.assertEqual(float(response.data['latitude']), -33.8617)
+        self.assertEqual(float(response.data['longitude']), 151.2108)
+        self.assertFalse(response.data['is_anonymous'])
+        self.assertIsNotNone(response.data['creator'])
+        self.assertEqual(len(response.data['photos']), 2)
+        self.assertIn('post_photo1', response.data['photos'][0]['image'])
+        self.assertIn('post_photo2', response.data['photos'][1]['image'])
+
+    def test_create_anonymous_post_success(self):
+        data = {
+            "title": "Secret Post",
+            "content": "Secret content",
+            "is_anonymous": True
+        }
+        response = self.client.post(self.posts_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['is_anonymous'])
+        # Anonymized response should mask creator info
+        self.assertIsNone(response.data['creator'])
+
+        # Listing endpoint check
+        res_list = self.client.get(self.posts_url)
+        post_item = next(item for item in res_list.data if item['id'] == response.data['id'])
+        self.assertIsNone(post_item['creator'])
+

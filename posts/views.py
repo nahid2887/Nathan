@@ -29,18 +29,21 @@ class IsCreatorOrReadOnly(permissions.BasePermission):
 
 @method_decorator(name='create', decorator=swagger_auto_schema(
     request_body=PostWriteSerializer,
+    consumes=['multipart/form-data', 'application/json'],
     operation_summary="Create a Post",
-    operation_description="Create a new post with content and an optional image.",
+    operation_description="Create a new post with content, optional photo, is_anonymous status, and coordinates.",
     tags=['Posts']
 ))
 @method_decorator(name='update', decorator=swagger_auto_schema(
     request_body=PostWriteSerializer,
+    consumes=['multipart/form-data', 'application/json'],
     operation_summary="Update a Post",
     operation_description="Replace an existing post.",
     tags=['Posts']
 ))
 @method_decorator(name='partial_update', decorator=swagger_auto_schema(
     request_body=PostWriteSerializer,
+    consumes=['multipart/form-data', 'application/json'],
     operation_summary="Partially Update a Post",
     operation_description="Update fields on an existing post.",
     tags=['Posts']
