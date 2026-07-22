@@ -26,9 +26,17 @@ class BusinessSerializer(serializers.ModelSerializer):
             'id', 'creator', 'name', 'category', 'description', 
             'phone_number', 'email_address', 'website', 
             'latitude', 'longitude', 'location_name', 
-            'business_hours', 'photos', 'created_at', 'updated_at'
+            'business_hours', 'photos', 'views_count', 'directions_clicks_count', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'creator', 'photos', 'created_at', 'updated_at', 'views_count', 'directions_clicks_count']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if not (request and request.user and request.user.is_authenticated and request.user == instance.creator):
+            data.pop('views_count', None)
+            data.pop('directions_clicks_count', None)
+        return data
 
 class BusinessWriteSerializer(serializers.ModelSerializer):
     photos = serializers.ListField(

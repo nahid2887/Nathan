@@ -76,15 +76,49 @@ class BusinessViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     @swagger_auto_schema(
-        operation_summary="List own Businesses",
-        operation_description="Retrieve a list of businesses created by the currently logged-in user.",
+        operation_summary="List own Businesses with analytics",
+        operation_description="Retrieve a list of businesses created by the currently logged-in user along with aggregate analytics.",
+        responses={200: openapi.Response(
+            description="Aggregate business engagement metrics and own businesses list.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "total_views": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "total_clicks": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "total_engagement": openapi.Schema(type=openapi.TYPE_INTEGER),
+                    "businesses": openapi.Schema(
+                        type=openapi.TYPE_ARRAY,
+                        items=openapi.Schema(type=openapi.TYPE_OBJECT)
+                    )
+                }
+            )
+        )},
         tags=['Business']
     )
     @action(detail=False, methods=['get'], url_path='my')
     def my_businesses(self, request):
-        queryset = Business.objects.filter(creator=request.user).order_by('-created_at')
+        user = request.user
+        queryset = Business.objects.filter(creator=user).order_by('-created_at')
+
+        from django.db.models import Sum
+        aggregates = queryset.aggregate(
+            total_views=Sum('views_count'),
+            total_clicks=Sum('directions_clicks_count')
+        )
+
+        total_views = aggregates['total_views'] or 0
+        total_clicks = aggregates['total_clicks'] or 0
+        total_engagement = total_views + total_clicks
+
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        data = {
+            "total_views": total_views,
+            "total_clicks": total_clicks,
+            "total_engagement": total_engagement,
+            "businesses": serializer.data
+        }
+        return Response(data, status=status.HTTP_200_OK)
 
 
     @swagger_auto_schema(
@@ -102,6 +136,49 @@ class BusinessViewSet(viewsets.ModelViewSet):
     )
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: BusinessSerializer()},
+        tags=['Business'],
+        operation_summary="Record business view and get business details"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='click-view')
+    def click_view(self, request, pk=None):
+        business = self.get_object()
+        if business.creator != request.user:
+            business.views_count += 1
+            business.save(update_fields=['views_count'])
+        serializer = BusinessSerializer(business, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        method='post',
+        responses={200: openapi.Response(
+            description="Returns address and coordinates and records a directions click.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "location_name": openapi.Schema(type=openapi.TYPE_STRING),
+                    "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
+                    "longitude": openapi.Schema(type=openapi.TYPE_NUMBER)
+                }
+            )
+        )},
+        tags=['Business'],
+        operation_summary="Record directions click and get location info"
+    )
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated], url_path='click-directions')
+    def click_directions(self, request, pk=None):
+        business = self.get_object()
+        if business.creator != request.user:
+            business.directions_clicks_count += 1
+            business.save(update_fields=['directions_clicks_count'])
+        return Response({
+            "location_name": business.location_name,
+            "latitude": business.latitude,
+            "longitude": business.longitude
+        }, status=status.HTTP_200_OK)
 
 
 class BusinessProfileView(APIView):

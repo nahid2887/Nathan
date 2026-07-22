@@ -17,6 +17,8 @@ class Business(models.Model):
     longitude = models.DecimalField(max_digits=22, decimal_places=16, null=True, blank=True)
     location_name = models.CharField(max_length=255, null=True, blank=True)
     business_hours = models.JSONField(default=dict, blank=True, null=True)
+    views_count = models.PositiveIntegerField(default=0)
+    directions_clicks_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
