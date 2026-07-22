@@ -27,7 +27,7 @@ class ListingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'creator', 'title', 'category', 'status', 'price',
             'condition', 'description', 'latitude', 'longitude',
-            'location_name', 'pickup_date', 'photos', 'created_at', 'updated_at', 'type', 'distance_km'
+            'location_name', 'pickup_date', 'pickup_time', 'photos', 'created_at', 'updated_at', 'type', 'distance_km'
         ]
         read_only_fields = [
             'id', 'creator', 'photos', 'created_at', 'updated_at', 'type', 'distance_km'
@@ -59,7 +59,7 @@ class ListingWriteSerializer(serializers.ModelSerializer):
         fields = [
             'title', 'category', 'status', 'price',
             'condition', 'description', 'latitude', 'longitude',
-            'location_name', 'pickup_date', 'photos'
+            'location_name', 'pickup_date', 'pickup_time', 'photos'
         ]
 
     def validate_photos(self, value):
