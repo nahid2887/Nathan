@@ -16,4 +16,6 @@ whitenoise==6.9.0
 agora_token_builder==1.0.0
 stripe==11.2.0
 firebase-admin
+psycopg2-binary==2.9.10
+gunicorn==23.0.0
 

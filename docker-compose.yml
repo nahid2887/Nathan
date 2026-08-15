@@ -1,0 +1,63 @@
+services:
+  # ─── PostgreSQL ───────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: nathan_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-nathan_db}
+      POSTGRES_USER: ${DB_USER:-nathan_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nathan_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-nathan_user} -d ${DB_NAME:-nathan_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nathan_net
+
+  # ─── Redis (for Django Channels) ──────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nathan_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nathan_net
+
+  # ─── Django + Daphne (ASGI) ───────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nathan_web
+    restart: unless-stopped
+    env_file:
+      - .env.docker          # Docker-specific overrides (DB, Redis, etc.)
+    ports:
+      - "8003:8003"          # HOST:CONTAINER  →  visit http://localhost:8003
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/static
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nathan_net
+
+volumes:
+  postgres_data:
+  media_data:
+  static_data:
+
+networks:
+  nathan_net:
+    driver: bridge
