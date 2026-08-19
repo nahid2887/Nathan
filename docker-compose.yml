@@ -78,16 +78,18 @@ services:
     image: certbot/certbot:latest
     container_name: nathan_certbot
     volumes:
-      - ./nginx/ssl:/etc/letsencrypt/live/hoodlink.duckdns.org
+      - certbot_data:/etc/letsencrypt
       - certbot_www:/var/www/certbot
-    # Run manually with:  docker compose run --rm certbot certonly ...
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done"
+    # Keeps container alive for auto-renewal (no custom entrypoint so
+    # "docker compose run --rm certbot certonly ..." works correctly)
+    command: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
 
 volumes:
   postgres_data:
   media_data:
   static_data:
   certbot_www:
+  certbot_data:
 
 networks:
   nathan_net:
