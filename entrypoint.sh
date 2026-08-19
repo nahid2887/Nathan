@@ -19,7 +19,7 @@ except Exception as e:
   echo "   PostgreSQL not ready yet – sleeping 1 s"
   sleep 1
 done
-
+#d
 echo "✅  PostgreSQL is up!"
 
 echo "🔄  Applying database migrations ..."
