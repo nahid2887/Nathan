@@ -4,22 +4,25 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -e
 
-echo "⏳  Waiting for PostgreSQL at ${DB_HOST}:${DB_PORT:-5432} ..."
+echo "⏳  Waiting for PostgreSQL..."
 
-# Use Python to check TCP connectivity (more reliable than nc for DNS resolution)
-until python -c "
-import socket, sys
+# Use Python with os.environ (avoids shell variable expansion issues)
+until python - << 'PYEOF'
+import os, socket, sys
+host = os.environ.get('DB_HOST', 'db')
+port = int(os.environ.get('DB_PORT', '5432'))
 try:
-    s = socket.create_connection(('${DB_HOST}', int('${DB_PORT:-5432}')), timeout=2)
+    s = socket.create_connection((host, port), timeout=3)
     s.close()
     sys.exit(0)
-except Exception as e:
+except Exception:
     sys.exit(1)
-" 2>/dev/null; do
+PYEOF
+do
   echo "   PostgreSQL not ready yet – sleeping 1 s"
   sleep 1
 done
-#d
+
 echo "✅  PostgreSQL is up!"
 
 echo "🔄  Applying database migrations ..."
