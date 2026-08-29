@@ -629,6 +629,14 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(response_search_none.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response_search_none.data['results']), 0)
 
+        # 5. Test friend request exclusion
+        from accounts.models import Friendship
+        # Send friend request from current user to user_near
+        Friendship.objects.create(sender=self.user, receiver=user_near, status='pending')
+        response_friend_req = self.client.get(url)
+        self.assertEqual(response_friend_req.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response_friend_req.data['results']), 0)
+
     def test_friends_flow(self):
         # Create another user to interact with
         user_friend = User.objects.create_user(

@@ -631,8 +631,17 @@ class NearbyUsersView(APIView):
         else:
             radius = float(user.distance_radius) if user.distance_radius is not None else 25.0
 
-        # Fetch other users who have coordinates set
-        other_users = User.objects.exclude(id=user.id).filter(latitude__isnull=False, longitude__isnull=False)
+        # Fetch other users who have coordinates set and exclude those with pending or accepted friendships
+        friend_ids = Friendship.objects.filter(sender=user).values_list('receiver_id', flat=True)
+        incoming_ids = Friendship.objects.filter(receiver=user).values_list('sender_id', flat=True)
+        other_users = User.objects.exclude(id=user.id).filter(
+            latitude__isnull=False,
+            longitude__isnull=False
+        ).exclude(
+            id__in=friend_ids
+        ).exclude(
+            id__in=incoming_ids
+        )
 
         # Filter by full name if search parameter is provided
         if search_param:
