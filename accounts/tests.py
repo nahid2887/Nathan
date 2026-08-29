@@ -595,9 +595,6 @@ class AccountsAPITests(APITestCase):
         self.assertEqual(response.data['results'][0]['id'], user_near.id)
         self.assertEqual(response.data['results'][0]['full_name'], "Near User")
         self.assertIsNotNone(response.data['results'][0]['distance_km'])
-        self.assertFalse(response.data['results'][0]['friend_request_sent'])
-        self.assertFalse(response.data['results'][0]['friend_request_received'])
-        self.assertFalse(response.data['results'][0]['is_friend'])
 
         # 2. Test override query parameters (e.g. distance=150 to catch the far user too)
         response_override = self.client.get(f"{url}?distance=150")
@@ -631,99 +628,6 @@ class AccountsAPITests(APITestCase):
         response_search_none = self.client.get(f"{url}?distance=150&search=nobody")
         self.assertEqual(response_search_none.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response_search_none.data['results']), 0)
-
-    def test_nearby_users_friendship_states(self):
-        from accounts.models import Friendship
-
-        # Log in
-        login_response = self.client.post(self.login_url, {
-            "email": "existing@example.com",
-            "password": "oldpassword123!"
-        })
-        access_token = login_response.data['access']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
-
-        # Set user location
-        self.user.latitude = 23.780769
-        self.user.longitude = 90.4125
-        self.user.distance_radius = 25
-        self.user.save()
-
-        # Create three nearby users
-        user_sent = User.objects.create_user(
-            username="sent@example.com",
-            email="sent@example.com",
-            password="password123!",
-            first_name="Sent Request User",
-            latitude=23.7898,
-            longitude=90.4125
-        )
-        user_received = User.objects.create_user(
-            username="received@example.com",
-            email="received@example.com",
-            password="password123!",
-            first_name="Received Request User",
-            latitude=23.7898,
-            longitude=90.4125
-        )
-        user_friend = User.objects.create_user(
-            username="friend_nearby@example.com",
-            email="friend_nearby@example.com",
-            password="password123!",
-            first_name="Friend Nearby User",
-            latitude=23.7898,
-            longitude=90.4125
-        )
-        user_none = User.objects.create_user(
-            username="none@example.com",
-            email="none@example.com",
-            password="password123!",
-            first_name="None User",
-            latitude=23.7898,
-            longitude=90.4125
-        )
-
-        # Set friendship states
-        # 1. Sent: self.user -> user_sent (pending)
-        Friendship.objects.create(sender=self.user, receiver=user_sent, status='pending')
-
-        # 2. Received: user_received -> self.user (pending)
-        Friendship.objects.create(sender=user_received, receiver=self.user, status='pending')
-
-        # 3. Friend: self.user <-> user_friend (accepted)
-        Friendship.objects.create(sender=self.user, receiver=user_friend, status='accepted')
-
-        url = reverse('nearby_users')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        results = response.data['results']
-
-        # Find each user's serialized data in results
-        results_map = {res['id']: res for res in results}
-
-        # Verify sent user
-        self.assertIn(user_sent.id, results_map)
-        self.assertTrue(results_map[user_sent.id]['friend_request_sent'])
-        self.assertFalse(results_map[user_sent.id]['friend_request_received'])
-        self.assertFalse(results_map[user_sent.id]['is_friend'])
-
-        # Verify received user
-        self.assertIn(user_received.id, results_map)
-        self.assertFalse(results_map[user_received.id]['friend_request_sent'])
-        self.assertTrue(results_map[user_received.id]['friend_request_received'])
-        self.assertFalse(results_map[user_received.id]['is_friend'])
-
-        # Verify friend user
-        self.assertIn(user_friend.id, results_map)
-        self.assertFalse(results_map[user_friend.id]['friend_request_sent'])
-        self.assertFalse(results_map[user_friend.id]['friend_request_received'])
-        self.assertTrue(results_map[user_friend.id]['is_friend'])
-
-        # Verify none user
-        self.assertIn(user_none.id, results_map)
-        self.assertFalse(results_map[user_none.id]['friend_request_sent'])
-        self.assertFalse(results_map[user_none.id]['friend_request_received'])
-        self.assertFalse(results_map[user_none.id]['is_friend'])
 
     def test_friends_flow(self):
         # Create another user to interact with

@@ -564,9 +564,6 @@ class NearbyUsersView(APIView):
                                     "latitude": openapi.Schema(type=openapi.TYPE_NUMBER),
                                     "longitude": openapi.Schema(type=openapi.TYPE_NUMBER),
                                     "distance_km": openapi.Schema(type=openapi.TYPE_NUMBER),
-                                    "friend_request_sent": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                                    "friend_request_received": openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                                    "is_friend": openapi.Schema(type=openapi.TYPE_BOOLEAN),
                                 }
                             )
                         )
@@ -652,21 +649,6 @@ class NearbyUsersView(APIView):
 
         # Sort by distance
         nearby_users.sort(key=lambda u: u.distance_km)
-
-        # Prefetch friendship records to prevent N+1 queries during serialization
-        nearby_user_ids = [u.id for u in nearby_users]
-        friendship_map = {}
-        if nearby_user_ids and user.is_authenticated:
-            friendships = Friendship.objects.filter(
-                Q(sender=user, receiver_id__in=nearby_user_ids) |
-                Q(sender_id__in=nearby_user_ids, receiver=user)
-            )
-            for f in friendships:
-                other_id = f.receiver_id if f.sender_id == user.id else f.sender_id
-                friendship_map[other_id] = f
-
-        for other_user in nearby_users:
-            other_user.friendship = friendship_map.get(other_user.id)
 
         serializer = NearbyUserSerializer(nearby_users, many=True, context={'request': request})
         return Response(

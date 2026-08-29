@@ -219,55 +219,14 @@ class ResetPasswordSerializer(serializers.Serializer):
 class NearbyUserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(source='first_name', read_only=True)
     distance_km = serializers.SerializerMethodField()
-    friend_request_sent = serializers.SerializerMethodField()
-    friend_request_received = serializers.SerializerMethodField()
-    is_friend = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = [
-            'id', 'full_name', 'email', 'profile_photo', 'latitude', 'longitude', 
-            'distance_km', 'friend_request_sent', 'friend_request_received', 'is_friend'
-        ]
+        fields = ['id', 'full_name', 'email', 'profile_photo', 'latitude', 'longitude', 'distance_km']
         read_only_fields = fields
 
     def get_distance_km(self, obj):
         return getattr(obj, 'distance_km', None)
-
-    def _get_friendship(self, obj):
-        if hasattr(obj, 'friendship'):
-            return obj.friendship
-
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return None
-
-        from django.db.models import Q
-        from .models import Friendship
-        return Friendship.objects.filter(
-            Q(sender=request.user, receiver=obj) |
-            Q(sender=obj, receiver=request.user)
-        ).first()
-
-    def get_friend_request_sent(self, obj):
-        friendship = self._get_friendship(obj)
-        if friendship and friendship.status == 'pending':
-            request = self.context.get('request')
-            if request and request.user.is_authenticated:
-                return friendship.sender_id == request.user.id
-        return False
-
-    def get_friend_request_received(self, obj):
-        friendship = self._get_friendship(obj)
-        if friendship and friendship.status == 'pending':
-            request = self.context.get('request')
-            if request and request.user.is_authenticated:
-                return friendship.receiver_id == request.user.id
-        return False
-
-    def get_is_friend(self, obj):
-        friendship = self._get_friendship(obj)
-        return friendship is not None and friendship.status == 'accepted'
 
 
 class FriendUserSerializer(serializers.ModelSerializer):
