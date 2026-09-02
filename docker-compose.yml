@@ -40,7 +40,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env.docker
-    # No longer expose port directly – Nginx is the only public entry point
+    ports:
+      - "8003:4003"
+      - "4003:4003"
     expose:
       - "4003"
     volumes:
