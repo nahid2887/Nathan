@@ -29,7 +29,26 @@ SECRET_KEY = 'django-insecure-+%k4_x2rg8#r#q=h&&yi-d_=&53de8h)tyrugt2c9o^*$!hz90
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['66.226.146.115', '10.10.13.27', '127.0.0.1', 'localhost', '*']
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
+else:
+    ALLOWED_HOSTS = ['hoodlink.duckdns.org', '66.226.146.115', '10.10.13.27', '127.0.0.1', 'localhost', '*']
+
+csrf_trusted_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if csrf_trusted_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_trusted_origins_env.split(',') if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://hoodlink.duckdns.org',
+        'http://hoodlink.duckdns.org',
+        'http://66.226.146.115',
+        'https://66.226.146.115',
+        'http://localhost',
+        'http://127.0.0.1',
+    ]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
 # Application definition
