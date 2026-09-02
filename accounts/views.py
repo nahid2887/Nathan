@@ -1165,9 +1165,14 @@ class PaymentSuccessView(APIView):
             return Response({"success": False, "message": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+
+@method_decorator(csrf_exempt, name='dispatch')
 class StripeWebhookView(APIView):
     from rest_framework.permissions import AllowAny
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     @swagger_auto_schema(
         operation_summary="Stripe Webhook Handler",

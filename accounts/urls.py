@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.decorators.csrf import csrf_exempt
 from .views import (
     RegisterView,
     ChangePasswordView,
@@ -137,7 +138,7 @@ urlpatterns = [
     ),
     path(
         'payment/stripe/webhook/',
-        StripeWebhookView.as_view(),
+        csrf_exempt(StripeWebhookView.as_view()),
         name='stripe_webhook'
     ),
     path(
