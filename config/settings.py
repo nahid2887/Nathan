@@ -29,11 +29,7 @@ SECRET_KEY = 'django-insecure-+%k4_x2rg8#r#q=h&&yi-d_=&53de8h)tyrugt2c9o^*$!hz90
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', '')
-if allowed_hosts_env:
-    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
-else:
-    ALLOWED_HOSTS = ['hoodlink.duckdns.org', '66.226.146.115', '10.10.13.27', '127.0.0.1', 'localhost', '*']
+ALLOWED_HOSTS = ['*']
 
 DEFAULT_TRUSTED_ORIGINS = [
     'https://hoodlink.duckdns.org',
@@ -50,14 +46,29 @@ if csrf_trusted_origins_env:
 else:
     CSRF_TRUSTED_ORIGINS = DEFAULT_TRUSTED_ORIGINS
 
-
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# ── CORS Settings ──────────────────────────────────────────────────────────
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = ['*']
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
 
 
 # Application definition
 
 INSTALLED_APPS = [
     'daphne',
+    'corsheaders',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -88,6 +99,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # serves static files (Swagger CSS/JS)
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -97,6 +109,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
 
 ROOT_URLCONF = 'config.urls'
 
